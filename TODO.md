@@ -14,6 +14,29 @@ This document serves as a general to-do list and development roadmap for Worktim
 
 Critical features and improvements that significantly impact user experience.
 
+#### 0. Worktime Integration Plan (Phase 1–3 Foundations)
+
+Track the Phase 1–3 extraction and integration work from `WORKTIME_PLAN.md` so the roadmap reflects the shared-library and unified event-store goals beyond the v4.0 in-app integrations.
+
+- **1. Extract `.hday` parser/serializer into shared lib**
+  - **Current State**: Parser/serializer already lives in Worktime (`src/lib/hday/parser.ts`)
+  - **Implementation**: Move parsing + serialization into a shared package/module for reuse across Worktime/NextShift
+  - **Status**: 🔲 Planned (shared-lib extraction)
+- **2. Extract shift rotation engine into shared lib**
+  - **Current State**: Rotation logic lives in `src/utils/shiftCalculations.ts`
+  - **Implementation**: Isolate shift cycle calculation into a reusable library module
+  - **Status**: 🔲 Planned
+- **3. Unified event store (computed shifts + `.hday` events)**
+  - **Current State**: `src/contexts/EventStoreContext.tsx` manages `.hday` time-off events only
+  - **Notes**: Enables HdayPlanner gap items 4.2 (Vacation Statistics), 4.3 (Raw .hday Editor), and 4.4 (Utility Functions) by standardizing event handling
+  - **Implementation**: Merge computed shift events with imported time-off events in a single in-memory store
+  - **Status**: 🔲 Planned (expansion beyond current time-off store)
+- **4. Overlay semantics on schedule/transfer views**
+  - **Source**: N/A (new definition)
+  - **Current State**: Schedule view has time-off overlay dots; Transfer view has none yet
+  - **Implementation**: Define merge/priority rules for how time-off overlays appear on Schedule + Transfer views
+  - **Status**: 🔲 Planned (formalize semantics + add transfer overlays)
+
 #### 1. Export Schedule Feature
 
 - **Component**: Calendar export functionality
