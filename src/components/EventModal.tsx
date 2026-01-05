@@ -1,5 +1,5 @@
 import type { RefObject } from "react";
-import { Button, Card, Col, Form, Modal, Row } from "react-bootstrap";
+import { Badge, Button, Card, Col, Form, Modal, Row } from "react-bootstrap";
 import type { EventFlag, TimeLocationFlag, TypeFlag } from "../lib/hday/types";
 import { getEventTypeLabel } from "../lib/hday/parser";
 import { getWeekdayName } from "../utils/dateTimeUtils";
@@ -44,9 +44,120 @@ function FlagCheckbox({
   );
 }
 
+/**
+ * Get human-readable label for an event flag.
+ * Used for displaying flags as badges in view mode.
+ *
+ * @param flag - The event flag key
+ * @returns Human-readable label for the flag
+ */
+function getFlagLabel(flag: EventFlag): string {
+  const labels: Record<string, string> = {
+    business: "Business",
+    course: "Course",
+    in: "In Office",
+    weekend: "Weekend",
+    birthday: "Birthday",
+    ill: "Sick Leave",
+    other: "Other",
+    half_am: "AM Half Day",
+    half_pm: "PM Half Day",
+    onsite: "Onsite",
+    no_fly: "No Fly",
+    can_fly: "Can Fly",
+  };
+  return labels[flag] || flag;
+}
+
+/**
+ * Props for the FlagSection component
+ */
+type FlagSectionProps = {
+  mode: "add" | "edit" | "view";
+  title: string;
+  fieldsetTitle?: string;
+  flagOptions: Array<[string, string]>;
+  eventFlags: EventFlag[];
+  flagGroup: EventFlag[];
+  onFlagChange: (flag: string) => void;
+};
+
+/**
+ * Reusable component for displaying flag sections in both edit and view modes.
+ * In edit/add mode, displays radio buttons for all flag options.
+ * In view mode, displays badges for active flags only.
+ *
+ * @param mode - Current modal mode ("add", "edit", or "view")
+ * @param title - Section title (used in view mode as form label)
+ * @param fieldsetTitle - Section title for fieldset (used in edit/add mode, defaults to title)
+ * @param flagOptions - Array of [flag, label] tuples for all available options
+ * @param eventFlags - Currently selected event flags
+ * @param flagGroup - Array of flags that belong to this section
+ * @param onFlagChange - Callback when a flag is changed
+ */
+function FlagSection({
+  mode,
+  title,
+  fieldsetTitle,
+  flagOptions,
+  eventFlags,
+  flagGroup,
+  onFlagChange,
+}: FlagSectionProps) {
+  if (mode !== "view") {
+    // Edit/Add mode: Show all radio buttons
+    return (
+      <Col xs={12}>
+        <fieldset className="border rounded p-3">
+          <legend className="float-none w-auto px-2 fs-6">{fieldsetTitle || title}</legend>
+          <Row className="g-2">
+            {flagOptions.map(([flag, label]) => (
+              <Col sm={6} lg={4} key={flag}>
+                <FlagCheckbox
+                  id={`${title.toLowerCase().replace(/\s+/g, "-")}-flag-${flag}`}
+                  name={`${title.toLowerCase().replace(/\s+/g, "-")}-flag`}
+                  type="radio"
+                  label={label}
+                  checked={
+                    flag === "none"
+                      ? !eventFlags.some((flagValue) => flagGroup.includes(flagValue))
+                      : eventFlags.includes(flag as EventFlag)
+                  }
+                  onChange={() => onFlagChange(flag)}
+                />
+              </Col>
+            ))}
+          </Row>
+        </fieldset>
+      </Col>
+    );
+  }
+
+  // View mode: Show only active flags as badges
+  return (
+    <Col xs={12}>
+      <Form.Group>
+        <Form.Label>{title}</Form.Label>
+        <div className="d-flex gap-2 align-items-center">
+          {eventFlags
+            .filter((f) => flagGroup.includes(f))
+            .map((flag) => (
+              <Badge key={flag} bg="secondary">
+                {getFlagLabel(flag)}
+              </Badge>
+            ))}
+          {!eventFlags.some((f) => flagGroup.includes(f)) && (
+            <span className="text-muted">None</span>
+          )}
+        </div>
+      </Form.Group>
+    </Col>
+  );
+}
+
 type EventModalProps = {
   show: boolean;
-  editIndex: number;
+  mode?: "add" | "edit" | "view";
   formRef: RefObject<HTMLDivElement | null>;
   eventType: "range" | "weekly";
   eventWeekday: number;
@@ -72,6 +183,7 @@ type EventModalProps = {
   onTimeFlagChange: (flag: TimeLocationFlag | "none") => void;
   onResetForm: () => void;
   onSubmit: () => void;
+  onSwitchToEdit?: () => void;
 };
 
 /**
@@ -93,7 +205,7 @@ type EventModalProps = {
  * - Modal backdrop click and Escape key both trigger onHide for flexibility
  *
  * @param show - Whether the modal is visible
- * @param editIndex - Index of the event being edited, or -1 for a new event
+ * @param mode - Modal mode: `"add"` for new events, `"edit"` for editing, `"view"` for read-only viewing
  * @param formRef - Ref attached to the modal body for focus management
  * @param eventType - Either `"range"` (start/end date) or `"weekly"` (weekday)
  * @param eventWeekday - Weekday number (1–7) when `eventType` is `"weekly"`
@@ -119,11 +231,12 @@ type EventModalProps = {
  * @param onTimeFlagChange - Handler invoked with a time/location-flag key when selected
  * @param onResetForm - Resets the form to its initial state
  * @param onSubmit - Submits the form to add or update the event
+ * @param onSwitchToEdit - Optional callback when Edit button is clicked in view mode to switch to edit mode
  * @returns The rendered EventModal component (a Bootstrap Modal containing the editor)
  */
 export function EventModal({
   show,
-  editIndex,
+  mode = "add",
   formRef,
   eventType,
   eventWeekday,
@@ -149,50 +262,56 @@ export function EventModal({
   onTimeFlagChange,
   onResetForm,
   onSubmit,
+  onSwitchToEdit,
 }: EventModalProps) {
   return (
     <Modal show={show} onHide={onHide} onEntered={onEntered} size="lg" centered>
       <Modal.Header closeButton>
-        <Modal.Title>{editIndex >= 0 ? "Edit event" : "New event"}</Modal.Title>
+        <Modal.Title>
+          {mode === "view" ? "View Event" : mode === "edit" ? "Edit Event" : "New Event"}
+        </Modal.Title>
       </Modal.Header>
       <Modal.Body ref={formRef} tabIndex={-1}>
         <Form>
           <Row className="g-3">
-            <Col xs={12}>
-              <Card className="preview-card border-0 bg-light">
-                <Card.Body className="py-2">
-                  <div className="small text-uppercase text-muted">Preview</div>
-                  <div className="fw-semibold">
-                    {getEventTypeLabel(eventFlags)}{" "}
-                    {eventType === "weekly"
-                      ? eventWeekday
-                        ? `· ${getWeekdayName(eventWeekday)}`
-                        : ""
-                      : eventStart
-                        ? eventEnd && eventEnd !== eventStart
-                          ? `· ${eventStart} → ${eventEnd}`
-                          : `· ${eventStart}`
-                        : "· Select a date"}
-                  </div>
-                  {eventTitle && <div className="text-muted">{eventTitle}</div>}
-                  {eventFlags.length > 0 && (
-                    <div className="text-muted small">Flags: {eventFlags.join(", ")}</div>
-                  )}
-                  <div className="mt-2">
-                    <div className="small text-uppercase text-muted">Raw line</div>
-                    <div className="font-monospace">
-                      {previewLine || "Fill in the required fields to preview the .hday line."}
+            {mode !== "view" && (
+              <Col xs={12}>
+                <Card className="preview-card border-0 bg-light">
+                  <Card.Body className="py-2">
+                    <div className="small text-uppercase text-muted">Preview</div>
+                    <div className="fw-semibold">
+                      {getEventTypeLabel(eventFlags)}{" "}
+                      {eventType === "weekly"
+                        ? eventWeekday
+                          ? `· ${getWeekdayName(eventWeekday)}`
+                          : ""
+                        : eventStart
+                          ? eventEnd && eventEnd !== eventStart
+                            ? `· ${eventStart} → ${eventEnd}`
+                            : `· ${eventStart}`
+                          : "· Select a date"}
                     </div>
-                  </div>
-                </Card.Body>
-              </Card>
-            </Col>
+                    {eventTitle && <div className="text-muted">{eventTitle}</div>}
+                    {eventFlags.length > 0 && (
+                      <div className="text-muted small">Flags: {eventFlags.join(", ")}</div>
+                    )}
+                    <div className="mt-2">
+                      <div className="small text-uppercase text-muted">Raw line</div>
+                      <div className="font-monospace">
+                        {previewLine || "Fill in the required fields to preview the .hday line."}
+                      </div>
+                    </div>
+                  </Card.Body>
+                </Card>
+              </Col>
+            )}
             <Col md={6}>
               <Form.Group controlId="eventType">
                 <Form.Label>Event type</Form.Label>
                 <Form.Select
                   value={eventType}
                   onChange={(event) => onEventTypeChange(event.target.value as "range" | "weekly")}
+                  disabled={mode === "view"}
                 >
                   <option value="range">Range (start-end)</option>
                   <option value="weekly">Weekly (weekday)</option>
@@ -208,6 +327,7 @@ export function EventModal({
                   value={eventTitle}
                   onChange={(event) => onEventTitleChange(event.target.value)}
                   placeholder="Optional comment"
+                  disabled={mode === "view"}
                 />
               </Form.Group>
             </Col>
@@ -230,6 +350,7 @@ export function EventModal({
                       isInvalid={!!startDateError}
                       aria-required="true"
                       aria-describedby={startDateError ? "eventStart-error" : undefined}
+                      disabled={mode === "view"}
                     />
                     {startDateError && (
                       <Form.Control.Feedback type="invalid" id="eventStart-error">
@@ -251,6 +372,7 @@ export function EventModal({
                       }
                       isInvalid={!!endDateError}
                       aria-describedby={endDateError ? "eventEnd-error" : undefined}
+                      disabled={mode === "view"}
                     />
                     {endDateError && (
                       <Form.Control.Feedback type="invalid" id="eventEnd-error">
@@ -267,6 +389,7 @@ export function EventModal({
                   <Form.Select
                     value={eventWeekday}
                     onChange={(event) => onEventWeekdayChange(parseInt(event.target.value, 10))}
+                    disabled={mode === "view"}
                   >
                     <option value="1">Mon</option>
                     <option value="2">Tue</option>
@@ -280,67 +403,50 @@ export function EventModal({
               </Col>
             )}
 
-            <Col xs={12}>
-              <fieldset className="border rounded p-3">
-                <legend className="float-none w-auto px-2 fs-6">Type Flags</legend>
-                <Row className="g-2">
-                  {typeFlagOptions.map(([flag, label]) => (
-                    <Col sm={6} lg={4} key={flag}>
-                      <FlagCheckbox
-                        id={`type-flag-${flag}`}
-                        name="type-flag"
-                        type="radio"
-                        label={label}
-                        checked={
-                          flag === "none"
-                            ? !eventFlags.some((flagValue) =>
-                                typeFlagsAsEventFlags.includes(flagValue),
-                              )
-                            : eventFlags.includes(flag)
-                        }
-                        onChange={() => onTypeFlagChange(flag)}
-                      />
-                    </Col>
-                  ))}
-                </Row>
-              </fieldset>
-            </Col>
+            <FlagSection
+              mode={mode}
+              title="Type"
+              fieldsetTitle="Type Flags"
+              flagOptions={typeFlagOptions}
+              eventFlags={eventFlags}
+              flagGroup={typeFlagsAsEventFlags}
+              onFlagChange={onTypeFlagChange}
+            />
 
-            <Col xs={12}>
-              <fieldset className="border rounded p-3">
-                <legend className="float-none w-auto px-2 fs-6">Time / Location Flags</legend>
-                <Row className="g-2">
-                  {timeLocationFlagOptions.map(([flag, label]) => (
-                    <Col sm={6} lg={4} key={flag}>
-                      <FlagCheckbox
-                        id={`time-flag-${flag}`}
-                        name="time-flag"
-                        type="radio"
-                        label={label}
-                        checked={
-                          flag === "none"
-                            ? !eventFlags.some((flagValue) =>
-                                timeLocationFlagsAsEventFlags.includes(flagValue),
-                              )
-                            : eventFlags.includes(flag)
-                        }
-                        onChange={() => onTimeFlagChange(flag)}
-                      />
-                    </Col>
-                  ))}
-                </Row>
-              </fieldset>
-            </Col>
+            <FlagSection
+              mode={mode}
+              title="Time / Location"
+              fieldsetTitle="Time / Location Flags"
+              flagOptions={timeLocationFlagOptions}
+              eventFlags={eventFlags}
+              flagGroup={timeLocationFlagsAsEventFlags}
+              onFlagChange={onTimeFlagChange}
+            />
           </Row>
         </Form>
       </Modal.Body>
       <Modal.Footer>
-        <Button variant="outline-secondary" onClick={onResetForm}>
-          Reset form
-        </Button>
-        <Button variant="primary" onClick={onSubmit}>
-          {editIndex >= 0 ? "Update" : "Add"}
-        </Button>
+        {mode === "view" ? (
+          <>
+            <Button variant="secondary" onClick={onHide}>
+              Close
+            </Button>
+            {onSwitchToEdit && (
+              <Button variant="primary" onClick={onSwitchToEdit}>
+                Edit
+              </Button>
+            )}
+          </>
+        ) : (
+          <>
+            <Button variant="outline-secondary" onClick={onResetForm}>
+              Reset form
+            </Button>
+            <Button variant="primary" onClick={onSubmit}>
+              {mode === "edit" ? "Update" : "Add"}
+            </Button>
+          </>
+        )}
       </Modal.Footer>
     </Modal>
   );

@@ -53,6 +53,11 @@ const TIME_LOCATION_FLAGS_AS_EVENT_FLAGS: readonly EventFlag[] = TIME_LOCATION_F
 ).filter((f) => f !== "none") as EventFlag[];
 
 /**
+ * Default weekday value for weekly events (1 = Monday).
+ */
+const DEFAULT_WEEKDAY = 1;
+
+/**
  * Empty state component for when no time-off events exist.
  * Adapts styling and messaging based on the current view mode.
  */
@@ -106,8 +111,6 @@ export function TimeOffView({ isActive = true }: TimeOffViewProps) {
     updateEvent,
     deleteEvent,
     deleteEvents,
-    duplicateEvent,
-    duplicateEvents,
     importHday,
     exportHday,
     canUndo,
@@ -125,10 +128,11 @@ export function TimeOffView({ isActive = true }: TimeOffViewProps) {
   // Modal state
   const [showEventModal, setShowEventModal] = useState(false);
   const [editIndex, setEditIndex] = useState(-1);
+  const [modalMode, setModalMode] = useState<"add" | "edit" | "view">("add");
 
   // Event form state
   const [eventType, setEventType] = useState<"range" | "weekly">("range");
-  const [eventWeekday, setEventWeekday] = useState(1);
+  const [eventWeekday, setEventWeekday] = useState(DEFAULT_WEEKDAY);
   const [eventStart, setEventStart] = useState("");
   const [eventEnd, setEventEnd] = useState("");
   const [eventTitle, setEventTitle] = useState("");
@@ -150,7 +154,7 @@ export function TimeOffView({ isActive = true }: TimeOffViewProps) {
 
   const resetForm = () => {
     setEventType("range");
-    setEventWeekday(1);
+    setEventWeekday(DEFAULT_WEEKDAY);
     setEventStart("");
     setEventEnd("");
     setEventTitle("");
@@ -192,16 +196,37 @@ export function TimeOffView({ isActive = true }: TimeOffViewProps) {
   const handleOpenAddModal = () => {
     resetForm();
     setEditIndex(-1);
+    setModalMode("add");
     setShowEventModal(true);
   };
 
   const handleAddEventForDate = (date: dayjs.Dayjs) => {
     resetForm();
     setEditIndex(-1);
+    setModalMode("add");
     setEventType("range");
     setEventStart(date.format("YYYY/MM/DD"));
     setEventEnd(date.format("YYYY/MM/DD"));
     setShowEventModal(true);
+  };
+
+  const prefillFormFromEvent = (event: HdayEvent) => {
+    if (event.type === "range") {
+      setEventType("range");
+      setEventStart(event.start || "");
+      setEventEnd(event.end || "");
+      setEventWeekday(DEFAULT_WEEKDAY);
+    } else if (event.type === "weekly") {
+      setEventType("weekly");
+      setEventWeekday(event.weekday || DEFAULT_WEEKDAY);
+      setEventStart("");
+      setEventEnd("");
+    }
+
+    setEventTitle(event.title || "");
+    setEventFlags(event.flags || []);
+    setStartDateError("");
+    setEndDateError("");
   };
 
   const handleOpenEditModal = (index: number) => {
@@ -209,19 +234,23 @@ export function TimeOffView({ isActive = true }: TimeOffViewProps) {
     if (!event) return;
 
     setEditIndex(index);
-
-    if (event.type === "range") {
-      setEventType("range");
-      setEventStart(event.start || "");
-      setEventEnd(event.end || "");
-    } else if (event.type === "weekly") {
-      setEventType("weekly");
-      setEventWeekday(event.weekday || 1);
-    }
-
-    setEventTitle(event.title || "");
-    setEventFlags(event.flags || []);
+    prefillFormFromEvent(event);
+    setModalMode("edit");
     setShowEventModal(true);
+  };
+
+  const handleOpenViewModal = (index: number) => {
+    const event = events[index];
+    if (!event) return;
+
+    setEditIndex(index);
+    prefillFormFromEvent(event);
+    setModalMode("view");
+    setShowEventModal(true);
+  };
+
+  const handleSwitchToEdit = () => {
+    setModalMode("edit");
   };
 
   const handleSubmitEvent = () => {
@@ -298,18 +327,6 @@ export function TimeOffView({ isActive = true }: TimeOffViewProps) {
     }
     setSelectedIndices([]);
     setShowBulkDeleteConfirm(false);
-  };
-
-  const handleDuplicate = (index: number) => {
-    duplicateEvent(index);
-    toast.showSuccess("Event duplicated", "📄");
-  };
-
-  const handleBulkDuplicate = () => {
-    if (selectedIndices.length === 0) return;
-    duplicateEvents(selectedIndices);
-    toast.showSuccess(`Duplicated ${selectedIndices.length} events`, "📄");
-    setSelectedIndices([]);
   };
 
   useEffect(() => {
@@ -513,17 +530,6 @@ export function TimeOffView({ isActive = true }: TimeOffViewProps) {
             <Button
               variant="outline-secondary"
               size="sm"
-              onClick={handleBulkDuplicate}
-              className="me-2"
-              disabled={selectedIndices.length === 0}
-              aria-label="Duplicate selected events"
-            >
-              <i className="bi bi-files me-1"></i>
-              Duplicate Selected
-            </Button>
-            <Button
-              variant="outline-secondary"
-              size="sm"
               onClick={handleSelectAll}
               className="me-2"
               disabled={events.length === 0 || selectedIndices.length === events.length}
@@ -574,7 +580,7 @@ export function TimeOffView({ isActive = true }: TimeOffViewProps) {
             <span className="text-muted small">
               {viewMode === "calendar"
                 ? "Click a day to add events, or select an event to edit."
-                : "Select events from the table to edit, duplicate, or delete."}
+                : "Select events from the table to edit or delete."}
             </span>
           </div>
 
@@ -588,7 +594,9 @@ export function TimeOffView({ isActive = true }: TimeOffViewProps) {
                 paydayMap={paydayMapForYear}
                 onMonthChange={setCalendarMonth}
                 onAddEvent={handleAddEventForDate}
+                onViewEvent={handleOpenViewModal}
                 onEditEvent={handleOpenEditModal}
+                onDeleteEvent={handleDeleteClick}
               />
               {events.length === 0 && <EmptyState mode="calendar" />}
             </div>
@@ -693,15 +701,6 @@ export function TimeOffView({ isActive = true }: TimeOffViewProps) {
                                 <i className="bi bi-pencil" aria-hidden="true"></i>
                               </Button>
                               <Button
-                                variant="outline-secondary"
-                                size="sm"
-                                onClick={() => handleDuplicate(index)}
-                                className="me-2"
-                                aria-label={`Duplicate ${event.title || eventLabel}`}
-                              >
-                                <i className="bi bi-files" aria-hidden="true"></i>
-                              </Button>
-                              <Button
                                 variant="outline-danger"
                                 size="sm"
                                 onClick={() => handleDeleteClick(index)}
@@ -734,7 +733,7 @@ export function TimeOffView({ isActive = true }: TimeOffViewProps) {
       {/* Event Modal */}
       <EventModal
         show={showEventModal}
-        editIndex={editIndex}
+        mode={modalMode}
         formRef={formRef}
         eventType={eventType}
         eventWeekday={eventWeekday}
@@ -760,6 +759,7 @@ export function TimeOffView({ isActive = true }: TimeOffViewProps) {
         onTimeFlagChange={handleTimeFlagChange}
         onResetForm={resetForm}
         onSubmit={handleSubmitEvent}
+        onSwitchToEdit={handleSwitchToEdit}
       />
 
       {/* Delete Confirmation Dialog */}
