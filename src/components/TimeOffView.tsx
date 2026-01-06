@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Button from "react-bootstrap/Button";
 import ButtonGroup from "react-bootstrap/ButtonGroup";
 import Card from "react-bootstrap/Card";
+import Form from "react-bootstrap/Form";
 import Table from "react-bootstrap/Table";
 import type { EventFlag, HdayEvent, TimeLocationFlag, TypeFlag } from "../lib/hday/types";
 import {
@@ -10,7 +11,6 @@ import {
   getEventTypeLabel,
   getTimeLocationSymbol,
   normalizeEventFlags,
-  parseHday,
 } from "../lib/hday/parser";
 import { isValidDate } from "../lib/hday/validation";
 import { useEventStore } from "../contexts/EventStoreContext";
@@ -106,6 +106,7 @@ interface TimeOffViewProps {
 
 export function TimeOffView({ isActive = true }: TimeOffViewProps) {
   const {
+    rawText,
     events,
     addEvent,
     updateEvent,
@@ -120,7 +121,7 @@ export function TimeOffView({ isActive = true }: TimeOffViewProps) {
   } = useEventStore();
   const toast = useToast();
 
-  const [viewMode, setViewMode] = useState<"calendar" | "table">("table");
+  const [viewMode, setViewMode] = useState<"calendar" | "table" | "raw">("table");
   const [calendarMonth, setCalendarMonth] = useState(() => dayjs());
   const { publicHolidayMap } = usePublicHolidays(calendarMonth.year());
   const { schoolHolidayMap } = useSchoolHolidays(calendarMonth.year());
@@ -137,6 +138,11 @@ export function TimeOffView({ isActive = true }: TimeOffViewProps) {
   const [eventEnd, setEventEnd] = useState("");
   const [eventTitle, setEventTitle] = useState("");
   const [eventFlags, setEventFlags] = useState<EventFlag[]>([]);
+
+  // Raw .hday editor state
+  const [rawEditorText, setRawEditorText] = useState(rawText);
+  const [rawEditorError, setRawEditorError] = useState("");
+  const [isRawEditorDirty, setIsRawEditorDirty] = useState(false);
 
   // Validation errors
   const [startDateError, setStartDateError] = useState("");
@@ -333,6 +339,12 @@ export function TimeOffView({ isActive = true }: TimeOffViewProps) {
     setSelectedIndices((prev) => prev.filter((index) => index >= 0 && index < events.length));
   }, [events.length]);
 
+  useEffect(() => {
+    if (!isRawEditorDirty) {
+      setRawEditorText(rawText);
+    }
+  }, [isRawEditorDirty, rawText]);
+
   const handleImport = () => {
     fileInputRef.current?.click();
   };
@@ -343,11 +355,10 @@ export function TimeOffView({ isActive = true }: TimeOffViewProps) {
 
     try {
       const text = await file.text();
-      // Validate by parsing
-      parseHday(text);
-      // Import if valid
       importHday(text);
       setSelectedIndices([]); // Clear selection after import
+      setIsRawEditorDirty(false); // Reset raw editor dirty state
+      setRawEditorError(""); // Clear any raw editor errors
       toast.showSuccess(`Imported ${file.name}`, "📥");
     } catch (error) {
       console.error("Failed to import .hday file:", error);
@@ -380,6 +391,35 @@ export function TimeOffView({ isActive = true }: TimeOffViewProps) {
 
     toast.showSuccess("Exported timeoff.hday", "📤");
   };
+
+  const handleRawEditorChange = useCallback(
+    (value: string) => {
+      setRawEditorText(value);
+      setIsRawEditorDirty(true);
+      setRawEditorError("");
+    },
+    [],
+  );
+
+  const handleParseRawEditor = useCallback(() => {
+    try {
+      importHday(rawEditorText);
+      setSelectedIndices([]);
+      setIsRawEditorDirty(false);
+      setRawEditorError("");
+      toast.showSuccess("Raw .hday content applied", "✓");
+    } catch (error) {
+      console.error("Failed to parse raw .hday content:", error);
+      setRawEditorError("Failed to parse raw .hday content. Please check the format.");
+      toast.showError("Failed to parse raw .hday content.");
+    }
+  }, [importHday, rawEditorText, toast]);
+
+  const handleResetRawEditor = useCallback(() => {
+    setRawEditorText(rawText);
+    setIsRawEditorDirty(false);
+    setRawEditorError("");
+  }, [rawText]);
 
   const handleUndo = useCallback(() => {
     if (!canUndo) return;
@@ -480,6 +520,12 @@ export function TimeOffView({ isActive = true }: TimeOffViewProps) {
     return `unknown-${index}-${event.raw ?? ""}`;
   };
 
+  const viewModeHelpText = {
+    calendar: "Click a day to add events, or select an event to edit.",
+    table: "Select events from the table to edit or delete.",
+    raw: "Edit raw .hday content directly. Click Apply to save changes.",
+  } as const;
+
   return (
     <div className="time-off-view py-3">
       <Card>
@@ -576,11 +622,19 @@ export function TimeOffView({ isActive = true }: TimeOffViewProps) {
               >
                 Table
               </Button>
+              <Button
+                variant={viewMode === "raw" ? "primary" : "outline-primary"}
+                size="sm"
+                onClick={() => setViewMode("raw")}
+              >
+                Raw .hday
+                {isRawEditorDirty && viewMode !== "raw" && (
+                  <span className="badge bg-warning text-dark ms-1">•</span>
+                )}
+              </Button>
             </ButtonGroup>
             <span className="text-muted small">
-              {viewMode === "calendar"
-                ? "Click a day to add events, or select an event to edit."
-                : "Select events from the table to edit or delete."}
+              {viewModeHelpText[viewMode]}
             </span>
           </div>
 
@@ -717,6 +771,49 @@ export function TimeOffView({ isActive = true }: TimeOffViewProps) {
                 </tbody>
               </Table>
             ))}
+
+          {viewMode === "raw" && (
+            <div role="region" aria-label="Raw .hday content editor">
+              <p className="text-muted">
+                Paste your <code>.hday</code> content below (or load a file), click <strong>Apply</strong>
+                , then export if needed. Flags: <code>a</code>=half AM, <code>p</code>=half PM,{" "}
+                <code>b</code>=business, <code>e</code>=weekend, <code>h</code>=birthday,{" "}
+                <code>i</code>=ill, <code>k</code>=in, <code>s</code>=course, <code>u</code>=other,{" "}
+                <code>w</code>=onsite, <code>n</code>=no fly, <code>f</code>=can fly; weekly:{" "}
+                <code>d1-d7</code> (Mon-Sun) with flags after (e.g., <code>d3ab</code> for Wed AM business).
+              </p>
+              <Form.Group controlId="hdayText" className="mb-3">
+                <Form.Label className="visually-hidden">Raw .hday content</Form.Label>
+                <Form.Control
+                  as="textarea"
+                  rows={20}
+                  value={rawEditorText}
+                  onChange={(event) => handleRawEditorChange(event.target.value)}
+                  placeholder={
+                    "Example:\n2024/12/23-2025/01/05 # Winter break\np2024/07/17-2024/07/17\nd3ab # Wednesday AM business"
+                  }
+                  className="textarea-mono"
+                  aria-describedby={rawEditorError ? "raw-editor-error" : undefined}
+                  isInvalid={!!rawEditorError}
+                />
+                {rawEditorError && (
+                  <div className="text-danger small mt-2" role="alert" id="raw-editor-error">
+                    {rawEditorError}
+                  </div>
+                )}
+              </Form.Group>
+              <div className="d-flex flex-wrap gap-2">
+                <Button variant="primary" onClick={handleParseRawEditor}>
+                  <i className="bi bi-check-circle me-1"></i>
+                  Apply raw content
+                </Button>
+                <Button variant="outline-secondary" onClick={handleResetRawEditor} disabled={!isRawEditorDirty}>
+                  <i className="bi bi-arrow-counterclockwise me-1"></i>
+                  Reset
+                </Button>
+              </div>
+            </div>
+          )}
         </Card.Body>
       </Card>
 
