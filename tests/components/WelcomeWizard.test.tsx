@@ -5,6 +5,7 @@ import type React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "../../src/App";
 import { WelcomeWizard } from "../../src/components/WelcomeWizard";
+import { SettingsProvider } from "../../src/contexts/SettingsContext";
 
 const defaultProps = {
   show: true,
@@ -15,7 +16,7 @@ const defaultProps = {
 
 // Test wrapper with required providers
 function renderWithProviders(ui: React.ReactElement) {
-  return render(ui);
+  return render(<SettingsProvider>{ui}</SettingsProvider>);
 }
 
 // Test helper functions
@@ -26,10 +27,12 @@ const findModalTitle = async (text: RegExp) => {
   return modalHeading;
 };
 
-const waitForStep = async (stepNumber: number, timeout = 3000) => {
+const waitForStep = async (stepNumber: number, totalSteps: number = 4, timeout = 3000) => {
   await waitFor(
     () => {
-      expect(screen.getByText(new RegExp(`Step ${stepNumber} of 3`, "i"))).toBeInTheDocument();
+      expect(
+        screen.getByText(new RegExp(`Step ${stepNumber} of ${totalSteps}`, "i")),
+      ).toBeInTheDocument();
     },
     { timeout },
   );
@@ -120,29 +123,284 @@ describe("WelcomeWizard", () => {
       expect(screen.getByText("Welcome to Worktime! 👋")).toBeInTheDocument();
       expect(mockOnHide).toBeDefined();
     });
+
+    it("calls onDefer when 'Maybe Later' is clicked", async () => {
+      const user = userEvent.setup();
+      const mockOnDefer = vi.fn();
+      const mockOnHide = vi.fn();
+
+      renderWithProviders(
+        <WelcomeWizard {...defaultProps} onDefer={mockOnDefer} onHide={mockOnHide} />,
+      );
+
+      const maybeLaterButton = screen.getByRole("button", { name: /Maybe Later/i });
+      await user.click(maybeLaterButton);
+
+      // Should call onDefer, not onHide
+      expect(mockOnDefer).toHaveBeenCalledTimes(1);
+      expect(mockOnHide).not.toHaveBeenCalled();
+    });
+
+    it("falls back to onHide when onDefer is not provided", async () => {
+      const user = userEvent.setup();
+      const mockOnHide = vi.fn();
+
+      renderWithProviders(<WelcomeWizard {...defaultProps} onHide={mockOnHide} />);
+
+      const maybeLaterButton = screen.getByRole("button", { name: /Maybe Later/i });
+      await user.click(maybeLaterButton);
+
+      // Should fall back to onHide when onDefer is not provided
+      expect(mockOnHide).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("Vacation Allowance Step", () => {
+    beforeEach(() => {
+      localStorage.clear();
+    });
+
+    it("should navigate to vacation allowance step after team selection", async () => {
+      const mockOnTeamSelect = vi.fn();
+      const mockOnHide = vi.fn();
+
+      renderWithProviders(
+        <WelcomeWizard show={true} onTeamSelect={mockOnTeamSelect} onHide={mockOnHide} />,
+      );
+
+      const user = userEvent.setup();
+
+      // Navigate through wizard
+      await user.click(screen.getByRole("button", { name: /Let's Get Started/i }));
+      await user.click(screen.getByRole("button", { name: /Choose My Team/i }));
+
+      // Select a team
+      await user.click(screen.getByRole("button", { name: /Select Team 1/i }));
+
+      // Should be on vacation allowance step
+      expect(screen.getByText(/Set Up Vacation Tracking/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/Annual vacation allowance/i)).toBeInTheDocument();
+      expect(mockOnHide).not.toHaveBeenCalled(); // Not completed yet
+    });
+
+    it("should allow skipping vacation allowance step", async () => {
+      const mockOnHide = vi.fn();
+
+      renderWithProviders(
+        <WelcomeWizard
+          show={true}
+          onTeamSelect={vi.fn()}
+          onHide={mockOnHide}
+          startStep="vacation-allowance"
+        />,
+      );
+
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("button", { name: /Skip/i }));
+
+      expect(mockOnHide).toHaveBeenCalledTimes(1);
+    });
+
+    it("should save vacation allowance when values entered", async () => {
+      const mockOnHide = vi.fn();
+
+      renderWithProviders(
+        <WelcomeWizard
+          show={true}
+          onTeamSelect={vi.fn()}
+          onHide={mockOnHide}
+          startStep="vacation-allowance"
+        />,
+      );
+
+      const user = userEvent.setup();
+
+      const amountInput = screen.getByLabelText(/Annual vacation allowance/i);
+      await user.clear(amountInput);
+      await user.type(amountInput, "28");
+
+      // Select hours unit
+      await user.click(screen.getByLabelText(/Hours/i));
+
+      // Complete
+      await user.click(screen.getByRole("button", { name: /Save & Complete/i }));
+
+      // Verify onHide was called with vacation allowance data
+      expect(mockOnHide).toHaveBeenCalledTimes(1);
+      expect(mockOnHide).toHaveBeenCalledWith({
+        amount: 28,
+        unit: "hours",
+      });
+    });
+
+    it("should show 'Complete' button when no amount entered", () => {
+      renderWithProviders(
+        <WelcomeWizard
+          show={true}
+          onTeamSelect={vi.fn()}
+          onHide={vi.fn()}
+          startStep="vacation-allowance"
+        />,
+      );
+
+      // No input entered - button should say "Complete" not "Save & Complete"
+      expect(screen.getByRole("button", { name: /^Complete$/i })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /Save & Complete/i })).not.toBeInTheDocument();
+    });
+
+    it("should show 'Save & Complete' button when amount is entered", async () => {
+      const user = userEvent.setup();
+      renderWithProviders(
+        <WelcomeWizard
+          show={true}
+          onTeamSelect={vi.fn()}
+          onHide={vi.fn()}
+          startStep="vacation-allowance"
+        />,
+      );
+
+      const amountInput = screen.getByLabelText(/Annual vacation allowance/i);
+      await user.type(amountInput, "20");
+
+      // Amount entered - button should say "Save & Complete" not just "Complete"
+      expect(screen.getByRole("button", { name: /Save & Complete/i })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /^Complete$/i })).not.toBeInTheDocument();
+    });
+
+    it("should allow navigating back from vacation allowance step", async () => {
+      renderWithProviders(
+        <WelcomeWizard
+          show={true}
+          onTeamSelect={vi.fn()}
+          onHide={vi.fn()}
+          startStep="vacation-allowance"
+        />,
+      );
+
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("button", { name: /Back/i }));
+
+      // Should go back to team selection
+      expect(screen.getByText(/How would you like to use Worktime?/i)).toBeInTheDocument();
+    });
+
+    it("should show correct progress for vacation allowance step", () => {
+      renderWithProviders(
+        <WelcomeWizard
+          show={true}
+          onTeamSelect={vi.fn()}
+          onHide={vi.fn()}
+          startStep="vacation-allowance"
+        />,
+      );
+
+      expect(screen.getByText(/Step 4 of 4/i)).toBeInTheDocument();
+    });
+
+    it("should show validation error for negative vacation amount", async () => {
+      const user = userEvent.setup();
+      renderWithProviders(
+        <WelcomeWizard
+          show={true}
+          onTeamSelect={vi.fn()}
+          onHide={vi.fn()}
+          startStep="vacation-allowance"
+        />,
+      );
+
+      const amountInput = screen.getByLabelText(/Annual vacation allowance/i);
+      await user.type(amountInput, "-5");
+
+      // Should show validation error
+      expect(screen.getByText(/Please enter a valid number \(0 or greater\)/i)).toBeVisible();
+
+      // Complete button should be disabled
+      const completeButton = screen.getByRole("button", { name: /Complete/i });
+      expect(completeButton).toBeDisabled();
+    });
+
+    it("should enable Save button for valid positive amount", async () => {
+      const user = userEvent.setup();
+      renderWithProviders(
+        <WelcomeWizard
+          show={true}
+          onTeamSelect={vi.fn()}
+          onHide={vi.fn()}
+          startStep="vacation-allowance"
+        />,
+      );
+
+      const amountInput = screen.getByLabelText(/Annual vacation allowance/i);
+      await user.type(amountInput, "25");
+
+      // Input should not have invalid styling for valid input
+      expect(amountInput).not.toHaveClass("is-invalid");
+
+      // Save button should be enabled
+      const saveButton = screen.getByRole("button", { name: /Save & Complete/i });
+      expect(saveButton).toBeEnabled();
+    });
+
+    it("should handle zero amount as valid (disables vacation tracking)", async () => {
+      const user = userEvent.setup();
+      const mockOnHide = vi.fn();
+      renderWithProviders(
+        <WelcomeWizard
+          show={true}
+          onTeamSelect={vi.fn()}
+          onHide={mockOnHide}
+          startStep="vacation-allowance"
+        />,
+      );
+
+      const amountInput = screen.getByLabelText(/Annual vacation allowance/i);
+      await user.type(amountInput, "0");
+
+      // Input should not have invalid styling for zero
+      expect(amountInput).not.toHaveClass("is-invalid");
+
+      // Save button should be enabled and show "Save & Complete"
+      const saveButton = screen.getByRole("button", { name: /Save & Complete/i });
+      expect(saveButton).toBeEnabled();
+
+      // Click the save button
+      await user.click(saveButton);
+
+      // Should call onHide with 0 amount (explicitly disabling vacation tracking)
+      expect(mockOnHide).toHaveBeenCalledWith({
+        amount: 0,
+        unit: "days",
+      });
+    });
   });
 
   describe("Integration tests", () => {
     let originalLocalStorage: Storage;
+    let testStorage: Record<string, string>;
 
     beforeEach(() => {
       // Clear localStorage and ensure consistent test state
       vi.clearAllMocks();
 
-      // Mock localStorage to ensure clean state
+      // Create a real storage implementation for testing
+      testStorage = {};
+
+      // Mock localStorage with a real implementation
       originalLocalStorage = window.localStorage;
       Object.defineProperty(window, "localStorage", {
         value: {
-          clear: vi.fn(),
-          getItem: vi.fn((key) => {
-            // Return null for user state key to trigger WelcomeWizard
-            if (key === "worktime_user_state") {
-              return null;
-            }
-            return null;
+          clear: vi.fn(() => {
+            testStorage = {};
           }),
-          setItem: vi.fn(),
-          removeItem: vi.fn(),
+          getItem: vi.fn((key: string) => {
+            return testStorage[key] || null;
+          }),
+          setItem: vi.fn((key: string, value: string) => {
+            testStorage[key] = value;
+          }),
+          removeItem: vi.fn((key: string) => {
+            delete testStorage[key];
+          }),
           length: 0,
           key: vi.fn(),
         },
@@ -176,6 +434,9 @@ describe("WelcomeWizard", () => {
       // Complete team selection
       await user.click(screen.getByLabelText(/Select Team 1/i));
 
+      // Now on vacation allowance step - skip it
+      await user.click(screen.getByRole("button", { name: /Skip/i }));
+
       await waitFor(() =>
         expect(screen.queryByText(/Welcome to Worktime/i)).not.toBeInTheDocument(),
       );
@@ -207,6 +468,9 @@ describe("WelcomeWizard", () => {
       });
       await user.click(browseButton);
 
+      // Now on vacation allowance step - skip it
+      await user.click(screen.getByRole("button", { name: /Skip/i }));
+
       // Modal should close
       await waitFor(() =>
         expect(screen.queryByText(/Welcome to Worktime/i)).not.toBeInTheDocument(),
@@ -229,15 +493,119 @@ describe("WelcomeWizard", () => {
 
       // Verify welcome wizard appears with correct initial step
       await findModalTitle(/Welcome to Worktime/i);
-      expect(screen.getByText(/Step 1 of 3/i)).toBeInTheDocument();
+      expect(screen.getByText(/Step 1 of 4/i)).toBeInTheDocument();
 
       // Navigate to features step
       await user.click(screen.getByText("Let's Get Started!"));
-      expect(screen.getByText(/Step 2 of 3/i)).toBeInTheDocument();
+      expect(screen.getByText(/Step 2 of 4/i)).toBeInTheDocument();
 
       // Navigate to team selection step
       await user.click(screen.getByText(/Choose My Team/i));
-      expect(screen.getByText(/Step 3 of 3/i)).toBeInTheDocument();
+      expect(screen.getByText(/Step 3 of 4/i)).toBeInTheDocument();
+
+      // Select a team to go to vacation allowance step
+      await user.click(screen.getByLabelText(/Select Team 1/i));
+      expect(screen.getByText(/Step 4 of 4/i)).toBeInTheDocument();
+    });
+
+    it("should save vacation allowance when browsing all teams without selecting one", async () => {
+      const user = userEvent.setup();
+      render(<App />);
+
+      // Verify welcome wizard appears
+      await findModalTitle(/Welcome to Worktime/i);
+
+      // Navigate through wizard to team selection
+      await navigateToTeamSelection(user);
+
+      // Click "Browse All Teams" instead of selecting a team
+      await user.click(screen.getByRole("button", { name: /Browse All Teams/i }));
+
+      // Should be on vacation allowance step
+      expect(screen.getByText(/Set Up Vacation Tracking/i)).toBeInTheDocument();
+
+      // Enter vacation allowance
+      const amountInput = screen.getByLabelText(/Annual vacation allowance/i);
+      await user.clear(amountInput);
+      await user.type(amountInput, "35");
+
+      // Complete wizard
+      await user.click(screen.getByRole("button", { name: /Save & Complete/i }));
+
+      // Modal should close
+      await waitFor(() =>
+        expect(screen.queryByText(/Set Up Vacation Tracking/i)).not.toBeInTheDocument(),
+      );
+
+      // Verify vacation allowance was saved to localStorage even without selecting a team
+      const saved = JSON.parse(localStorage.getItem("worktime_user_state") || "{}");
+      expect(saved.settings?.vacationAllowance?.amount).toBe(35);
+      expect(saved.settings?.vacationAllowance?.unit).toBe("days");
+      expect(saved.hasCompletedOnboarding).toBe(true);
+      expect(saved.myTeam).toBeNull(); // No team was selected
+    });
+
+    it("should save vacation allowance when updated in change-team mode", async () => {
+      const user = userEvent.setup();
+      render(<App />);
+
+      // Complete initial onboarding
+      await findModalTitle(/Welcome to Worktime/i);
+      await navigateToTeamSelection(user);
+      await user.click(screen.getByLabelText(/Select Team 1/i));
+
+      // Set initial vacation allowance
+      const initialAmountInput = screen.getByLabelText(/Annual vacation allowance/i);
+      await user.clear(initialAmountInput);
+      await user.type(initialAmountInput, "25");
+      await user.click(screen.getByRole("button", { name: /Save & Complete/i }));
+
+      // Wait for wizard to close
+      await waitFor(() =>
+        expect(screen.queryByText(/Set Up Vacation Tracking/i)).not.toBeInTheDocument(),
+      );
+
+      // Verify initial vacation allowance was saved
+      let saved = JSON.parse(localStorage.getItem("worktime_user_state") || "{}");
+      expect(saved.settings?.vacationAllowance?.amount).toBe(25);
+      expect(saved.myTeam).toBe(1);
+
+      // Now open the wizard in change-team mode
+      const changeTeamButton = screen.getByRole("button", { name: /Change Team/i });
+      await user.click(changeTeamButton);
+
+      // Should show the wizard again
+      await waitFor(() =>
+        expect(screen.getByText(/How would you like to use Worktime/i)).toBeInTheDocument(),
+      );
+
+      // Navigate to vacation allowance step by selecting a team
+      await user.click(screen.getByLabelText(/Select Team 2/i));
+      expect(screen.getByText(/Set Up Vacation Tracking/i)).toBeInTheDocument();
+
+      // Update vacation allowance
+      const updatedAmountInput = screen.getByLabelText(/Annual vacation allowance/i);
+      await user.clear(updatedAmountInput);
+      await user.type(updatedAmountInput, "30");
+
+      // Save the update
+      await user.click(screen.getByRole("button", { name: /Save & Complete/i }));
+
+      // Wait for wizard to close
+      await waitFor(() =>
+        expect(screen.queryByText(/Set Up Vacation Tracking/i)).not.toBeInTheDocument(),
+      );
+
+      // Verify vacation allowance was updated in change-team mode
+      saved = JSON.parse(localStorage.getItem("worktime_user_state") || "{}");
+      expect(saved.settings?.vacationAllowance?.amount).toBe(30);
+      expect(saved.settings?.vacationAllowance?.unit).toBe("days");
+      expect(saved.myTeam).toBe(2); // Team was changed
+
+      // Verify success toast was shown
+      await waitFor(() => {
+        expect(screen.getByText(/Vacation allowance updated successfully/i)).toBeInTheDocument();
+      });
     });
   });
 });

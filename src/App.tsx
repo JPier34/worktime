@@ -12,6 +12,7 @@ import { ToastProvider, useToast } from "./contexts/ToastContext";
 import { useShiftCalculation } from "./hooks/useShiftCalculation";
 import { CONFIG } from "./utils/config";
 import { dayjs } from "./utils/dateTimeUtils";
+import type { VacationAllowanceUnit } from "./utils/vacationCalculations";
 
 /**
  * The main application component for team selection and shift management.
@@ -26,8 +27,14 @@ function AppContent() {
   const [activeTab, setActiveTab] = useState("today");
   const [showAbout, setShowAbout] = useState(false);
   const { showSuccess, showInfo } = useToast();
-  const { myTeam, setMyTeam, hasCompletedOnboarding, completeOnboardingWithTeam, settings } =
-    useSettings();
+  const {
+    myTeam,
+    setMyTeam,
+    hasCompletedOnboarding,
+    completeOnboardingWithVacation,
+    updateVacationAllowance,
+    settings,
+  } = useSettings();
   const { currentDate, setCurrentDate, todayShifts } = useShiftCalculation();
   const pendingDeepLinkRef = useRef<{ team?: string; date?: string }>({});
 
@@ -113,10 +120,9 @@ function AppContent() {
   }, [settings.theme]);
 
   const handleTeamSelect = (team: number) => {
-    // Use the atomic function to avoid race condition
-    completeOnboardingWithTeam(team);
-    setShowTeamModal(false);
-    showSuccess(`Team ${team} selected! Your shifts are now personalized.`, "🎯");
+    // Save team selection (onboarding will be completed after vacation step)
+    setMyTeam(team);
+    // Don't close modal yet - wizard continues to vacation allowance step
   };
 
   const handleChangeTeam = () => {
@@ -124,16 +130,29 @@ function AppContent() {
     setShowTeamModal(true);
   };
 
-  const handleSkipTeamSelection = () => {
-    // Complete onboarding without selecting a team
-    completeOnboardingWithTeam(null);
+  const handleTeamModalHide = (vacationAllowance?: {
+    amount: number;
+    unit: VacationAllowanceUnit;
+  }) => {
+    // Complete onboarding when wizard closes (after vacation step)
+    // Use atomic update to ensure vacation allowance persists correctly
+    if (teamModalMode === "onboarding" && !hasCompletedOnboarding) {
+      completeOnboardingWithVacation(myTeam, vacationAllowance);
+      if (myTeam !== null) {
+        showSuccess(`Team ${myTeam} selected! Your shifts are now personalized.`, "🎯");
+      }
+    } else if (teamModalMode === "change-team" && vacationAllowance) {
+      // Persist vacation allowance changes in change-team mode
+      updateVacationAllowance(vacationAllowance);
+      showSuccess("Vacation allowance updated successfully.", "✅");
+    }
     setShowTeamModal(false);
-    showInfo("Browsing all teams. Select a team anytime for personalized features!", "👀");
   };
 
-  const handleTeamModalHide = () => {
-    // If user closes modal (Maybe Later), don't mark onboarding as completed
-    // They should see the wizard again on next visit
+  const handleWizardDefer = () => {
+    // User clicked "Maybe Later" - reset team selection and close without marking onboarding as complete
+    // Wizard will show again on next visit
+    setMyTeam(null);
     setShowTeamModal(false);
   };
 
@@ -169,8 +188,13 @@ function AppContent() {
           <WelcomeWizard
             show={showTeamModal}
             onTeamSelect={handleTeamSelect}
-            onSkip={handleSkipTeamSelection}
+            onSkip={() => {
+              // User chose to browse all teams - clear team selection
+              setMyTeam(null);
+              // Continue to vacation step, don't close modal yet
+            }}
             onHide={handleTeamModalHide}
+            onDefer={handleWizardDefer}
             startStep={teamModalMode === "onboarding" ? "welcome" : "team-selection"}
           />
           <AboutModal show={showAbout} onHide={() => setShowAbout(false)} />

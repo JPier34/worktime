@@ -2,32 +2,59 @@ import { useEffect, useRef, useState } from "react";
 import Alert from "react-bootstrap/Alert";
 import Button from "react-bootstrap/Button";
 import Col from "react-bootstrap/Col";
+import Form from "react-bootstrap/Form";
 import Modal from "react-bootstrap/Modal";
 import ProgressBar from "react-bootstrap/ProgressBar";
 import Row from "react-bootstrap/Row";
 import Spinner from "react-bootstrap/Spinner";
 import { CONFIG } from "../utils/config";
+import type { VacationAllowanceUnit } from "../utils/vacationCalculations";
 
-type WizardStep = "welcome" | "features" | "team-selection";
+type WizardStep = "welcome" | "features" | "team-selection" | "vacation-allowance";
+
+/**
+ * Validates vacation amount input.
+ * Returns an object with validation state:
+ * - isValid: true if amount is valid for saving (not empty, not NaN, >= 0; 0 disables vacation tracking)
+ * - isInvalid: true if amount has been entered but is invalid (NaN or < 0)
+ * - parsedAmount: the parsed number, or null if not a valid number
+ */
+function validateVacationAmount(amount: string) {
+  const trimmedAmount = amount.trim();
+  if (trimmedAmount === "") {
+    return { isValid: false, isInvalid: false, parsedAmount: null };
+  }
+  const parsed = parseFloat(trimmedAmount);
+  const isNotANumber = Number.isNaN(parsed);
+  const isNegative = parsed < 0;
+
+  return {
+    isValid: !isNotANumber && parsed >= 0,
+    isInvalid: isNotANumber || isNegative,
+    parsedAmount: !isNotANumber ? parsed : null,
+  };
+}
 
 interface WelcomeWizardProps {
   show: boolean;
   onTeamSelect: (team: number) => void;
   onSkip?: () => void;
-  onHide: () => void;
+  onHide: (vacationAllowance?: { amount: number; unit: VacationAllowanceUnit }) => void;
+  onDefer?: () => void;
   isLoading?: boolean;
   startStep?: WizardStep;
 }
 
 /**
- * Present a three-step onboarding modal that guides users through welcome, feature highlights and team selection.
+ * Present a four-step onboarding modal that guides users through welcome, feature highlights, team selection, and optional vacation allowance setup.
  *
  * @param show - Whether the wizard modal is visible
  * @param onTeamSelect - Called with the chosen team number when a team button is selected
  * @param onSkip - Optional callback invoked when the user chooses to browse all teams instead of selecting one
- * @param onHide - Called to request the wizard be hidden
+ * @param onHide - Called when the wizard is completed with optional vacation allowance data (marks onboarding as done)
+ * @param onDefer - Optional callback invoked when user clicks "Maybe Later" (defers wizard to next visit)
  * @param isLoading - When true, disables interactions and displays a setup spinner
- * @param startStep - Initial step to show when the wizard opens ("welcome" | "features" | "team-selection")
+ * @param startStep - Initial step to show when the wizard opens ("welcome" | "features" | "team-selection" | "vacation-allowance")
  * @returns The WelcomeWizard React element
  */
 export function WelcomeWizard({
@@ -35,12 +62,17 @@ export function WelcomeWizard({
   onTeamSelect,
   onSkip,
   onHide,
+  onDefer,
   isLoading = false,
   startStep = "welcome",
 }: WelcomeWizardProps) {
   const [currentStep, setCurrentStep] = useState<WizardStep>(startStep);
   const initialStepRef = useRef(startStep);
   const firstButtonRef = useRef<HTMLButtonElement>(null);
+
+  // Vacation allowance form state
+  const [vacationAmount, setVacationAmount] = useState<string>("");
+  const [vacationUnit, setVacationUnit] = useState<VacationAllowanceUnit>("days");
 
   // Sync currentStep when startStep prop changes
   useEffect(() => {
@@ -62,6 +94,8 @@ export function WelcomeWizard({
         return "2";
       case "team-selection":
         return "3";
+      case "vacation-allowance":
+        return "4";
       default:
         return "1";
     }
@@ -80,11 +114,33 @@ export function WelcomeWizard({
 
   const handleTeamSelect = (team: number) => {
     onTeamSelect(team);
-    // Don't call onHide() here - let the parent component handle modal hiding
+    nextStep(); // Go to vacation allowance step
   };
 
   const handleSkip = () => {
     onSkip?.();
+    nextStep(); // Go to vacation allowance step
+  };
+
+  const handleVacationComplete = () => {
+    // Pass vacation allowance data to onHide for atomic update
+    const validation = validateVacationAmount(vacationAmount);
+
+    if (!validation.isValid || validation.parsedAmount === null) {
+      // No valid vacation data to save
+      onHide();
+      return;
+    }
+
+    // All valid amounts (including 0 which disables vacation tracking) are saved
+    onHide({
+      amount: validation.parsedAmount,
+      unit: vacationUnit,
+    });
+  };
+
+  const handleVacationSkip = () => {
+    // User chose to skip - no vacation data to save
     onHide();
   };
 
@@ -93,11 +149,15 @@ export function WelcomeWizard({
       setCurrentStep("features");
     } else if (currentStep === "features") {
       setCurrentStep("team-selection");
+    } else if (currentStep === "team-selection") {
+      setCurrentStep("vacation-allowance");
     }
   };
 
   const prevStep = () => {
-    if (currentStep === "team-selection") {
+    if (currentStep === "vacation-allowance") {
+      setCurrentStep("team-selection");
+    } else if (currentStep === "team-selection") {
       setCurrentStep("features");
     } else if (currentStep === "features") {
       setCurrentStep("welcome");
@@ -107,10 +167,12 @@ export function WelcomeWizard({
   const getProgressPercentage = () => {
     switch (currentStep) {
       case "welcome":
-        return 33;
+        return 25;
       case "features":
-        return 66;
+        return 50;
       case "team-selection":
+        return 75;
+      case "vacation-allowance":
         return 100;
       default:
         return 0;
@@ -125,6 +187,8 @@ export function WelcomeWizard({
         return "What can Worktime do? ✨";
       case "team-selection":
         return "Choose Your Experience 🎯";
+      case "vacation-allowance":
+        return "Vacation Tracking ✈️";
       default:
         return "Welcome to Worktime";
     }
@@ -148,7 +212,13 @@ export function WelcomeWizard({
       <div className="d-flex justify-content-between">
         <Button
           variant="outline-secondary"
-          onClick={onHide}
+          onClick={() => {
+            if (onDefer) {
+              onDefer();
+            } else {
+              onHide(); // Fallback: close modal and complete onboarding via onHide handler
+            }
+          }}
           disabled={isLoading}
           ref={currentStep === "welcome" ? firstButtonRef : undefined}
         >
@@ -284,6 +354,95 @@ export function WelcomeWizard({
     </>
   );
 
+  const renderVacationAllowanceStep = () => {
+    const validation = validateVacationAmount(vacationAmount);
+
+    return (
+      <>
+        <div className="text-center mb-4">
+          <i className="bi bi-calendar-check display-4 text-primary"></i>
+          <h4 className="mt-3">Set Up Vacation Tracking (Optional)</h4>
+          <p className="text-muted">
+            Track your vacation allowance and see how much time off you have remaining. You can skip
+            this and set it up later in Settings.
+          </p>
+        </div>
+
+        <Form>
+          <Form.Group className="mb-3" controlId="vacationAmount">
+            <Form.Label>Annual vacation allowance</Form.Label>
+            <Form.Control
+              type="number"
+              min={0}
+              step={0.5}
+              placeholder="e.g., 25"
+              value={vacationAmount}
+              onChange={(e) => setVacationAmount(e.target.value)}
+              disabled={isLoading}
+              isInvalid={validation.isInvalid}
+            />
+            <Form.Control.Feedback type="invalid">
+              Please enter a valid number (0 or greater)
+            </Form.Control.Feedback>
+            <Form.Text className="text-muted">Leave empty to skip vacation tracking</Form.Text>
+          </Form.Group>
+
+          <Form.Group controlId="vacationUnit">
+            <Form.Label>Unit</Form.Label>
+            <div className="d-flex gap-3">
+              <Form.Check
+                type="radio"
+                id="unit-days"
+                label="Days"
+                checked={vacationUnit === "days"}
+                onChange={() => setVacationUnit("days")}
+                disabled={isLoading}
+              />
+              <Form.Check
+                type="radio"
+                id="unit-hours"
+                label="Hours"
+                checked={vacationUnit === "hours"}
+                onChange={() => setVacationUnit("hours")}
+                disabled={isLoading}
+              />
+            </div>
+          </Form.Group>
+        </Form>
+
+        <div className="d-flex justify-content-between mt-4">
+          <Button
+            variant="outline-secondary"
+            onClick={prevStep}
+            disabled={isLoading}
+            ref={currentStep === "vacation-allowance" ? firstButtonRef : undefined}
+          >
+            <i className="bi bi-arrow-left me-2"></i>
+            Back
+          </Button>
+          <div>
+            <Button
+              variant="outline-secondary"
+              onClick={handleVacationSkip}
+              disabled={isLoading}
+              className="me-2"
+            >
+              Skip
+            </Button>
+            <Button
+              variant="primary"
+              onClick={handleVacationComplete}
+              disabled={isLoading || validation.isInvalid}
+            >
+              {validation.isValid ? "Save & Complete" : "Complete"}
+              <i className="bi bi-check-lg ms-2"></i>
+            </Button>
+          </div>
+        </div>
+      </>
+    );
+  };
+
   return (
     <Modal
       show={show}
@@ -307,7 +466,7 @@ export function WelcomeWizard({
             className="mb-2"
           />
           <div className="d-flex justify-content-between small text-muted">
-            <span>Step {getStepNumber()} of 3</span>
+            <span>Step {getStepNumber()} of 4</span>
             <span>{getProgressPercentage()}% Complete</span>
           </div>
         </div>
@@ -321,6 +480,7 @@ export function WelcomeWizard({
             {currentStep === "welcome" && renderWelcomeStep()}
             {currentStep === "features" && renderFeaturesStep()}
             {currentStep === "team-selection" && renderTeamSelectionStep()}
+            {currentStep === "vacation-allowance" && renderVacationAllowanceStep()}
           </>
         )}
       </Modal.Body>
