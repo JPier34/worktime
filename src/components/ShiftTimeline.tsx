@@ -4,9 +4,14 @@ import Badge from "react-bootstrap/Badge";
 import OverlayTrigger from "react-bootstrap/OverlayTrigger";
 import Tooltip from "react-bootstrap/Tooltip";
 import { useSettings } from "../contexts/SettingsContext";
-import { getLocalizedShiftTime } from "../utils/dateTimeUtils";
 import type { ShiftResult } from "../utils/shiftCalculations";
-import { getAllTeamsShifts, getShiftByCode } from "../utils/shiftCalculations";
+import type { ScheduleOption } from "../data/rosters";
+import {
+  getAllTeamsShifts,
+  getShiftByCode,
+  getShiftDisplay,
+  getFormattedShiftTime,
+} from "../utils/shiftCalculations";
 
 interface TimelineData {
   prevShift: ShiftResult | null;
@@ -19,13 +24,22 @@ interface TimelineData {
  *
  * If the current team is the first working shift of the day, the previous shift (if any) is taken from the last working shift of the previous day. If the current team is the last working shift of the day, the next shift (if any) is taken from the first working shift of the following day.
  *
- * @param today - The reference date for which to build the timeline
+ * @param _today - The reference date (calendar day) - not used; shift day is derived from currentWorkingTeam.date
  * @param currentWorkingTeam - The team currently active within today's shifts
+ * @param scheduleOption - The schedule configuration to use
  * @returns An object with `prevShift` set to the adjacent previous working shift or `null`, `currentShift` equal to `currentWorkingTeam`, and `nextShift` set to the adjacent next working shift or `null`
  */
-function computeShiftTimeline(today: Dayjs, currentWorkingTeam: ShiftResult): TimelineData {
-  // Get all teams for today to build timeline
-  const allTeamsToday = getAllTeamsShifts(today);
+function computeShiftTimeline(
+  _today: Dayjs,
+  currentWorkingTeam: ShiftResult,
+  scheduleOption?: ScheduleOption | null,
+): TimelineData {
+  // Use the shift day from currentWorkingTeam instead of calendar day
+  // This is crucial for night shifts which use the previous calendar day as their shift day
+  const shiftDay = currentWorkingTeam.date;
+
+  // Get all teams for the shift day to build timeline
+  const allTeamsToday = getAllTeamsShifts(shiftDay, scheduleOption);
   const workingTeams = allTeamsToday.filter((team) => team.shift.isWorking);
 
   // Sort by shift start time to create timeline
@@ -55,8 +69,8 @@ function computeShiftTimeline(today: Dayjs, currentWorkingTeam: ShiftResult): Ti
     prevShift = timeline[currentIndex - 1] ?? null;
   } else {
     // Current shift is the first of the day, look at yesterday's last shift
-    const yesterday = today.subtract(1, "day");
-    const allTeamsYesterday = getAllTeamsShifts(yesterday);
+    const yesterday = shiftDay.subtract(1, "day");
+    const allTeamsYesterday = getAllTeamsShifts(yesterday, scheduleOption);
     const workingTeamsYesterday = allTeamsYesterday.filter((team) => team.shift.isWorking);
 
     if (workingTeamsYesterday.length > 0) {
@@ -77,8 +91,8 @@ function computeShiftTimeline(today: Dayjs, currentWorkingTeam: ShiftResult): Ti
     nextShift = timeline[currentIndex + 1] ?? null;
   } else {
     // Current shift is the last of the day, look at tomorrow's first shift
-    const tomorrow = today.add(1, "day");
-    const allTeamsTomorrow = getAllTeamsShifts(tomorrow);
+    const tomorrow = shiftDay.add(1, "day");
+    const allTeamsTomorrow = getAllTeamsShifts(tomorrow, scheduleOption);
     const workingTeamsTomorrow = allTeamsTomorrow.filter((team) => team.shift.isWorking);
 
     if (workingTeamsTomorrow.length > 0) {
@@ -116,8 +130,8 @@ interface ShiftTimelineProps {
 export function ShiftTimeline({ currentWorkingTeam, today }: ShiftTimelineProps) {
   // Generate unique ID for tooltip to avoid HTML ID conflicts
   const timelineTooltipId = useId();
-  const { settings } = useSettings();
-  const { prevShift, nextShift } = computeShiftTimeline(today, currentWorkingTeam);
+  const { settings, scheduleOption } = useSettings();
+  const { prevShift, nextShift } = computeShiftTimeline(today, currentWorkingTeam, scheduleOption);
 
   return (
     <div className="card-timeline timeline-container">
@@ -131,7 +145,9 @@ export function ShiftTimeline({ currentWorkingTeam, today }: ShiftTimelineProps)
             <Badge bg="light" text="dark" className="timeline-badge">
               T{prevShift.teamNumber}
             </Badge>
-            <div className="timeline-code">{prevShift.shift.code}</div>
+            <div className="timeline-code">
+              {getShiftDisplay(prevShift.shift, scheduleOption).displayCode}
+            </div>
           </div>
         )}
         {prevShift && <span className="timeline-arrow">→</span>}
@@ -142,15 +158,13 @@ export function ShiftTimeline({ currentWorkingTeam, today }: ShiftTimelineProps)
               <Tooltip id={timelineTooltipId}>
                 <strong>Currently Active</strong>
                 <br />
-                {currentWorkingTeam.shift.name}
+                {getShiftDisplay(currentWorkingTeam.shift, scheduleOption).displayName}
                 <br />
-                {currentWorkingTeam.shift.start && currentWorkingTeam.shift.end
-                  ? getLocalizedShiftTime(
-                      currentWorkingTeam.shift.start,
-                      currentWorkingTeam.shift.end,
-                      settings.timeFormat,
-                    )
-                  : currentWorkingTeam.shift.hours}
+                {getFormattedShiftTime(
+                  currentWorkingTeam.shift,
+                  scheduleOption,
+                  settings.timeFormat,
+                )}
               </Tooltip>
             }
           >
@@ -161,7 +175,7 @@ export function ShiftTimeline({ currentWorkingTeam, today }: ShiftTimelineProps)
             </Badge>
           </OverlayTrigger>
           <div className="timeline-code">
-            {currentWorkingTeam.shift.code}
+            {getShiftDisplay(currentWorkingTeam.shift, scheduleOption).displayCode}
             <OverlayTrigger
               placement="bottom"
               overlay={
@@ -182,7 +196,9 @@ export function ShiftTimeline({ currentWorkingTeam, today }: ShiftTimelineProps)
             <Badge bg="light" text="dark" className="timeline-badge">
               T{nextShift.teamNumber}
             </Badge>
-            <div className="timeline-code">{nextShift.shift.code}</div>
+            <div className="timeline-code">
+              {getShiftDisplay(nextShift.shift, scheduleOption).displayCode}
+            </div>
           </div>
         )}
       </div>

@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import Badge from "react-bootstrap/Badge";
 import Button from "react-bootstrap/Button";
 import Card from "react-bootstrap/Card";
@@ -9,7 +9,6 @@ import Row from "react-bootstrap/Row";
 import Table from "react-bootstrap/Table";
 import Tooltip from "react-bootstrap/Tooltip";
 import { useTransferCalculations } from "../hooks/useTransferCalculations";
-import { CONFIG } from "../utils/config";
 import { formatDisplayDate } from "../utils/dateTimeUtils";
 import { getShiftByCode, getShiftDisplayName } from "../utils/shiftCalculations";
 
@@ -23,7 +22,7 @@ interface TransferViewProps {
  *
  * Renders a card containing controls for choosing the other team, optionally filtering by a custom date range, and a paginated table of transfer records (or appropriate empty states).
  *
- * @param inputMyTeam - The user's team number (1..CONFIG.TEAMS_COUNT) or `null`. If a numeric value is outside the valid range, it is treated as `null` and a console warning is emitted.
+ * @param inputMyTeam - The user's team number or `null`. Team validation is handled by the useTransferCalculations hook.
  * @param initialOtherTeam - Optional team number to preselect as the "other" team when the component mounts.
  * @returns The rendered TransferView element.
  */
@@ -33,12 +32,6 @@ export function TransferView({ myTeam: inputMyTeam, initialOtherTeam }: Transfer
   const showPastCheckboxId = useId();
   const startDateId = useId();
   const endDateId = useId();
-  // Validate and sanitize user's team prop
-  let myTeam = inputMyTeam;
-  if (typeof myTeam === "number" && (myTeam < 1 || myTeam > CONFIG.TEAMS_COUNT)) {
-    console.warn(`Invalid user team number: ${myTeam}. Expected 1-${CONFIG.TEAMS_COUNT}`);
-    myTeam = null;
-  }
 
   // Local state
   const [transfersToShow, setTransfersToShow] = useState(10);
@@ -46,14 +39,23 @@ export function TransferView({ myTeam: inputMyTeam, initialOtherTeam }: Transfer
   const [customStartDate, setCustomStartDate] = useState("");
   const [customEndDate, setCustomEndDate] = useState("");
 
-  // Use the transfer calculations hook
-  const { transfers, availableOtherTeams, otherTeam, setOtherTeam, hasMoreTransfers } =
-    useTransferCalculations({
-      myTeam,
-      limit: transfersToShow,
-      customStartDate: useCustomRange ? customStartDate : undefined,
-      customEndDate: useCustomRange ? customEndDate : undefined,
-    });
+  // Use the transfer calculations hook - it validates the team number
+  const {
+    transfers,
+    availableOtherTeams,
+    otherTeam,
+    setOtherTeam,
+    hasMoreTransfers,
+    validatedMyTeam,
+  } = useTransferCalculations({
+    myTeam: inputMyTeam,
+    limit: transfersToShow,
+    customStartDate: useCustomRange ? customStartDate : undefined,
+    customEndDate: useCustomRange ? customEndDate : undefined,
+  });
+
+  // Use validated team for display
+  const myTeam = validatedMyTeam;
 
   // Reset pagination when filters change
   useEffect(() => {
@@ -61,11 +63,17 @@ export function TransferView({ myTeam: inputMyTeam, initialOtherTeam }: Transfer
   }, [otherTeam, useCustomRange, customStartDate, customEndDate]);
 
   // Set initial other team if provided (e.g., when coming from Team Detail Modal)
+  const initialSetRef = useRef(false);
   useEffect(() => {
-    if (initialOtherTeam && initialOtherTeam !== otherTeam) {
+    if (
+      !initialSetRef.current &&
+      initialOtherTeam &&
+      availableOtherTeams.includes(initialOtherTeam)
+    ) {
       setOtherTeam(initialOtherTeam);
+      initialSetRef.current = true;
     }
-  }, [initialOtherTeam, setOtherTeam]); // oxlint-disable-line react/exhaustive-deps -- Intentionally omitting otherTeam to prevent infinite loop when user changes selection
+  }, [initialOtherTeam, availableOtherTeams, setOtherTeam]);
 
   // Clear dates when custom range is disabled
   useEffect(() => {

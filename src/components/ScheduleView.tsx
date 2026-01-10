@@ -2,27 +2,27 @@ import type { Dayjs } from "dayjs";
 import { useId } from "react";
 import Badge from "react-bootstrap/Badge";
 import Button from "react-bootstrap/Button";
-import ButtonGroup from "react-bootstrap/ButtonGroup";
 import Card from "react-bootstrap/Card";
 import Form from "react-bootstrap/Form";
 import OverlayTrigger from "react-bootstrap/OverlayTrigger";
 import Table from "react-bootstrap/Table";
 import Tooltip from "react-bootstrap/Tooltip";
 import { useSettings } from "../contexts/SettingsContext";
+import { getScheduleConfig } from "../utils/scheduleUtils";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
-import { CONFIG } from "../utils/config";
 import {
   dayjs,
   formatYYWWD,
   getISOWeekYear2Digit,
   getLocalizedShiftTime,
 } from "../utils/dateTimeUtils";
-import { calculateShift, getShiftByCode } from "../utils/shiftCalculations";
+import { calculateShift, getShiftByCode, getShiftDisplay } from "../utils/shiftCalculations";
 
 interface ScheduleViewProps {
   myTeam: number | null; // The user's team from onboarding
   currentDate: Dayjs;
   setCurrentDate: (date: Dayjs) => void;
+  isActive?: boolean;
 }
 
 /**
@@ -39,12 +39,17 @@ export function ScheduleView({
   myTeam: inputMyTeam,
   currentDate,
   setCurrentDate,
+  isActive = true,
 }: ScheduleViewProps) {
   const datePickerId = useId();
+  const { settings, scheduleOption } = useSettings();
+  const scheduleConfig = getScheduleConfig(scheduleOption);
+  const teamCount = scheduleConfig.shiftConfig.teamCount ?? 1;
+  const hasTeams = scheduleConfig.showsTeamSelection ?? true;
   // Validate and sanitize myTeam prop
   let myTeam = inputMyTeam;
-  if (typeof myTeam === "number" && (myTeam < 1 || myTeam > CONFIG.TEAMS_COUNT)) {
-    console.warn(`Invalid team number: ${myTeam}. Expected 1-${CONFIG.TEAMS_COUNT}`);
+  if (typeof myTeam === "number" && (myTeam < 1 || myTeam > teamCount)) {
+    console.warn(`Invalid team number: ${myTeam}. Expected 1-${teamCount}`);
     myTeam = null;
   }
   const isMyTeam = (teamNumber: number) => {
@@ -73,34 +78,40 @@ export function ScheduleView({
   const startOfWeek = currentDate.startOf("isoWeek"); // Monday (ISO week)
   const weekDays = Array.from({ length: 7 }, (_, i) => startOfWeek.add(i, "day"));
 
-  // Keyboard shortcuts
-  useKeyboardShortcuts({
-    onToday: handleCurrent,
-    onPrevious: handlePrevious,
-    onNext: handleNext,
-  });
+  // Check if we're viewing the current week
+  const currentWeekStart = dayjs().startOf("isoWeek");
+  const isCurrentWeek = startOfWeek.isSame(currentWeekStart, "day");
 
-  const { settings } = useSettings();
+  // Keyboard shortcuts (only active when this tab is visible)
+  useKeyboardShortcuts(
+    isActive
+      ? {
+          onToday: handleCurrent,
+          onPrevious: handlePrevious,
+          onNext: handleNext,
+        }
+      : {},
+  );
 
   return (
     <Card>
       <Card.Header>
         <div className="d-flex justify-content-between align-items-center mb-2">
           <h6 className="mb-0">📅 Schedule Overview</h6>
-          <ButtonGroup aria-label="Week navigation">
+          <div className="d-flex gap-2">
             <Button
               variant="outline-secondary"
               size="sm"
               onClick={handlePrevious}
               aria-label="Go to previous week"
             >
-              <i className="bi bi-chevron-left me-1" aria-hidden="true"></i>
-              Previous
+              <i className="bi bi-chevron-left" aria-hidden="true"></i>
             </Button>
             <Button
-              variant="outline-primary"
+              variant={isCurrentWeek ? "primary" : "outline-primary"}
               size="sm"
               onClick={handleCurrent}
+              disabled={isCurrentWeek}
               aria-label="Go to current week"
             >
               <i className="bi bi-house me-1" aria-hidden="true"></i>
@@ -112,10 +123,9 @@ export function ScheduleView({
               onClick={handleNext}
               aria-label="Go to next week"
             >
-              Next
-              <i className="bi bi-chevron-right ms-1" aria-hidden="true"></i>
+              <i className="bi bi-chevron-right" aria-hidden="true"></i>
             </Button>
-          </ButtonGroup>
+          </div>
         </div>
         <div className="d-flex justify-content-between align-items-center gap-3">
           <div className="d-flex align-items-center gap-2">
@@ -137,9 +147,19 @@ export function ScheduleView({
         </div>
       </Card.Header>
       <Card.Body>
-        {myTeam && (
+        {myTeam && hasTeams && (
           <div className="mb-3">
             <strong>👥 Team {myTeam} Schedule:</strong>
+            <div className="text-muted small">
+              Week of {startOfWeek.format("MMM D")} -{" "}
+              {startOfWeek.add(6, "day").format("MMM D, YYYY")}
+            </div>
+          </div>
+        )}
+
+        {!hasTeams && (
+          <div className="mb-3">
+            <strong>📅 Your Schedule:</strong>
             <div className="text-muted small">
               Week of {startOfWeek.format("MMM D")} -{" "}
               {startOfWeek.add(6, "day").format("MMM D, YYYY")}
@@ -154,7 +174,7 @@ export function ScheduleView({
           >
             <thead>
               <tr>
-                <th className="team-header">Team</th>
+                <th className="team-header">{hasTeams ? "Team" : "Schedule"}</th>
                 {weekDays.map((day) => {
                   const isToday = day.isSame(dayjs(), "day");
                   return (
@@ -189,24 +209,33 @@ export function ScheduleView({
               </tr>
             </thead>
             <tbody>
-              {Array.from({ length: CONFIG.TEAMS_COUNT }, (_, i) => i + 1).map((teamNumber) => (
+              {Array.from({ length: teamCount }, (_, i) => i + 1).map((teamNumber) => (
                 <tr
                   key={teamNumber}
                   className={isMyTeam(teamNumber)}
-                  aria-label={`Team ${teamNumber}${myTeam === teamNumber ? " (your team)" : ""}`}
+                  aria-label={
+                    hasTeams
+                      ? `Team ${teamNumber}${myTeam === teamNumber ? " (your team)" : ""}`
+                      : "Schedule"
+                  }
                 >
                   <td className="team-header">
-                    <strong>Team {teamNumber}</strong>
+                    <strong>{hasTeams ? `Team ${teamNumber}` : "Schedule"}</strong>
                   </td>
                   {weekDays.map((day) => {
-                    const shift = calculateShift(day, teamNumber);
+                    const shift = calculateShift(day, teamNumber, scheduleOption ?? undefined);
                     const isToday = day.isSame(dayjs(), "day");
+                    const shiftDisplay = getShiftDisplay(shift, scheduleOption);
 
                     return (
                       <td
                         key={day.format("YYYY-MM-DD")}
                         className={`text-center ${isToday ? "today-column" : ""}`}
-                        aria-label={`Team ${teamNumber} on ${day.format("dddd")}: ${shift.isWorking ? shift.name : "Off"}`}
+                        aria-label={
+                          hasTeams
+                            ? `Team ${teamNumber} on ${day.format("dddd")}: ${shift.isWorking ? shiftDisplay.displayName : "Off"}`
+                            : `Schedule on ${day.format("dddd")}: ${shift.isWorking ? shiftDisplay.displayName : "Off"}`
+                        }
                       >
                         {shift.isWorking && (
                           <OverlayTrigger
@@ -215,14 +244,12 @@ export function ScheduleView({
                               <Tooltip
                                 id={`schedule-tooltip-${teamNumber}-${day.format("YYYY-MM-DD")}`}
                               >
-                                <strong>Shift: {shift.code}</strong>
+                                <strong>Shift: {shiftDisplay.displayCode}</strong>
                                 <br />
-                                {shift.code === "M" && "Morning shift"}
-                                {shift.code === "E" && "Evening shift"}
-                                {shift.code === "N" && "Night shift"}
+                                {shiftDisplay.displayName} shift
                                 <br />
                                 <em>
-                                  {shift.name} -{" "}
+                                  {shiftDisplay.displayName} -{" "}
                                   {getLocalizedShiftTime(
                                     shift.start,
                                     shift.end,
@@ -235,7 +262,7 @@ export function ScheduleView({
                             <Badge
                               className={`shift-code cursor-help ${getShiftByCode(shift.code).className}`}
                             >
-                              {shift.code}
+                              {shiftDisplay.displayCode}
                             </Badge>
                           </OverlayTrigger>
                         )}

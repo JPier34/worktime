@@ -17,6 +17,14 @@ vi.mock("../../src/utils/shiftCalculations", () => ({
   getOffDayProgress: vi.fn(),
   getShiftCode: vi.fn(),
   getShiftByCode: vi.fn(),
+  getShiftDisplay: vi.fn(),
+  getFormattedShiftTime: vi.fn((shift) => {
+    // Return formatted time with en-dash based on shift hours
+    if (shift.hours) {
+      return shift.hours.replace("-", "–");
+    }
+    return "";
+  }),
   isCurrentlyWorking: vi.fn(),
 }));
 
@@ -111,14 +119,15 @@ describe("CurrentStatus Component", () => {
     vi.mocked(shiftCalculations.getNextShift).mockReturnValue({
       date: dayjs("2024-01-16"),
       shift: {
-        code: "E",
+        code: "L",
+        emoji: "🌆",
         name: "Evening",
         hours: "15:00-23:00",
         start: 15,
         end: 23,
         isWorking: true,
       },
-      code: "2404.2E",
+      code: "2404.2L",
     });
     vi.mocked(shiftCalculations.getOffDayProgress).mockReturnValue({
       current: 2,
@@ -134,6 +143,10 @@ describe("CurrentStatus Component", () => {
       isWorking: true,
       className: "shift-morning",
     });
+    vi.mocked(shiftCalculations.getShiftDisplay).mockImplementation((shift) => ({
+      displayName: shift.name,
+      displayHours: shift.hours,
+    }));
     vi.mocked(shiftCalculations.isCurrentlyWorking).mockReturnValue(true);
     vi.mocked(useCountdownHook.useCountdown).mockReturnValue({
       days: 0,
@@ -411,7 +424,11 @@ describe("CurrentStatus Component", () => {
       renderWithProviders(<CurrentStatus myTeam={4} onChangeTeam={mockOnChangeTeam} />);
 
       expect(screen.getByText("Team 4: Morning")).toBeInTheDocument();
-      expect(shiftCalculations.calculateShift).toHaveBeenCalledWith(expect.any(Object), 4);
+      expect(shiftCalculations.calculateShift).toHaveBeenCalledWith(
+        expect.any(Object),
+        4,
+        undefined,
+      );
     });
   });
 
@@ -461,7 +478,11 @@ describe("CurrentStatus Component", () => {
         <CurrentStatus myTeam={1} onChangeTeam={mockOnChangeTeam} />,
       );
 
-      expect(shiftCalculations.calculateShift).toHaveBeenCalledWith(expect.any(Object), 1);
+      expect(shiftCalculations.calculateShift).toHaveBeenCalledWith(
+        expect.any(Object),
+        1,
+        undefined,
+      );
 
       rerender(
         <ToastProvider>
@@ -471,7 +492,11 @@ describe("CurrentStatus Component", () => {
         </ToastProvider>,
       );
 
-      expect(shiftCalculations.calculateShift).toHaveBeenCalledWith(expect.any(Object), 2);
+      expect(shiftCalculations.calculateShift).toHaveBeenCalledWith(
+        expect.any(Object),
+        2,
+        undefined,
+      );
     });
 
     it("should use memoized values correctly", () => {

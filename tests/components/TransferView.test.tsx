@@ -26,15 +26,15 @@ vi.mock("../../src/utils/shiftCalculations", () => ({
         isWorking: true,
         className: "shift-morning",
       },
-      E: {
-        code: "E",
+      L: {
+        code: "L",
         emoji: "🌆",
         name: "Evening",
         hours: "15:00-23:00",
         start: 15,
         end: 23,
         isWorking: true,
-        className: "shift-evening",
+        className: "shift-late",
       },
       N: {
         code: "N",
@@ -50,6 +50,21 @@ vi.mock("../../src/utils/shiftCalculations", () => ({
     return shifts[code] || shifts.M;
   }),
   getShiftDisplayName: vi.fn((shift) => `${shift.emoji} ${shift.name}`),
+  getShiftDisplay: vi.fn((shift) => {
+    // Apply 5-shift roster display overrides
+    if (shift.code === "L") {
+      return {
+        displayName: "Evening",
+        displayHours: shift.hours,
+        displayCode: "E",
+      };
+    }
+    return {
+      displayName: shift.name,
+      displayHours: shift.hours,
+      displayCode: shift.code,
+    };
+  }),
 }));
 
 vi.mock("../../src/utils/config", () => ({
@@ -67,6 +82,7 @@ const defaultHookReturn = {
   availableOtherTeams: [2, 3, 4, 5],
   otherTeam: 2,
   setOtherTeam: vi.fn(),
+  validatedMyTeam: 1, // Add validated team
 };
 
 const defaultProps = {
@@ -99,6 +115,7 @@ describe("TransferView", () => {
       mockUseTransferCalculations.mockReturnValue({
         ...defaultHookReturn,
         transfers: [],
+        validatedMyTeam: null, // Set validated team to null
       });
 
       render(<TransferView {...defaultProps} myTeam={null} />);
@@ -228,7 +245,7 @@ describe("TransferView", () => {
           fromTeam: 1,
           toTeam: 2,
           fromShiftType: "M" as const,
-          toShiftType: "E" as const,
+          toShiftType: "L" as const,
           type: "handover",
         },
       ];
@@ -251,6 +268,11 @@ describe("TransferView", () => {
     });
 
     it("shows team selection prompt when no team selected", () => {
+      mockUseTransferCalculations.mockReturnValue({
+        ...defaultHookReturn,
+        validatedMyTeam: null, // Set validated team to null
+      });
+
       render(<TransferView {...defaultProps} myTeam={null} />);
 
       expect(screen.getByText(/Please select your team/)).toBeInTheDocument();
@@ -258,23 +280,40 @@ describe("TransferView", () => {
   });
 
   describe("Prop validation", () => {
-    it("handles invalid team selection and shows warning", () => {
+    it("handles invalid team selection without crashing", () => {
+      // Invalid teams are handled by useTransferCalculations hook - mock returns null
+      mockUseTransferCalculations.mockReturnValue({
+        ...defaultHookReturn,
+        validatedMyTeam: null, // Hook validates to null
+      });
+
       render(<TransferView {...defaultProps} myTeam={999} />);
 
-      // Should render without crashing
+      // Should render without crashing - shows team selection prompt
       expect(screen.getByText("Team Transfers")).toBeInTheDocument();
-      // Should have called console.warn
-      expect(mockConsoleWarn).toHaveBeenCalledWith("Invalid user team number: 999. Expected 1-5");
+      expect(screen.getByText(/Please select your team/)).toBeInTheDocument();
+      // No warnings are logged at this level - validation is in the hook
     });
 
-    it("handles negative team numbers", () => {
+    it("handles negative team numbers without crashing", () => {
+      mockUseTransferCalculations.mockReturnValue({
+        ...defaultHookReturn,
+        validatedMyTeam: null, // Hook validates to null
+      });
+
       render(<TransferView {...defaultProps} myTeam={-1} />);
 
       expect(screen.getByText("Team Transfers")).toBeInTheDocument();
-      expect(mockConsoleWarn).toHaveBeenCalledWith("Invalid user team number: -1. Expected 1-5");
+      expect(screen.getByText(/Please select your team/)).toBeInTheDocument();
+      // No warnings are logged at this level - validation is in the hook
     });
 
     it("handles null team selection without warning", () => {
+      mockUseTransferCalculations.mockReturnValue({
+        ...defaultHookReturn,
+        validatedMyTeam: null, // Set validated team to null
+      });
+
       render(<TransferView {...defaultProps} myTeam={null} />);
 
       expect(screen.getByText("Team Transfers")).toBeInTheDocument();
@@ -290,14 +329,14 @@ describe("TransferView", () => {
           fromTeam: 1,
           toTeam: 2,
           fromShiftType: "M" as const,
-          toShiftType: "E" as const,
+          toShiftType: "L" as const,
           type: "handover",
         },
         {
           date: dayjs("2025-01-16"),
           fromTeam: 2,
           toTeam: 1,
-          fromShiftType: "E" as const,
+          fromShiftType: "L" as const,
           toShiftType: "N" as const,
           type: "takeover",
         },
@@ -336,7 +375,7 @@ describe("TransferView", () => {
         fromTeam: 1,
         toTeam: 2,
         fromShiftType: "M" as const,
-        toShiftType: "E" as const,
+        toShiftType: "L" as const,
         type: "handover",
       }));
 

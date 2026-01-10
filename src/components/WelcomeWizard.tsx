@@ -7,10 +7,17 @@ import Modal from "react-bootstrap/Modal";
 import ProgressBar from "react-bootstrap/ProgressBar";
 import Row from "react-bootstrap/Row";
 import Spinner from "react-bootstrap/Spinner";
-import { CONFIG } from "../utils/config";
+import { useSettings } from "../contexts/SettingsContext";
+import { SCHEDULE_OPTIONS, type ScheduleOption } from "../data/rosters";
+import { getTeamCountForOption } from "../utils/scheduleUtils";
 import type { VacationAllowanceUnit } from "../utils/vacationCalculations";
 
-type WizardStep = "welcome" | "features" | "team-selection" | "vacation-allowance";
+type WizardStep =
+  | "welcome"
+  | "features"
+  | "schedule-selection"
+  | "team-selection"
+  | "vacation-allowance";
 
 /**
  * Validates vacation amount input.
@@ -38,41 +45,62 @@ function validateVacationAmount(amount: string) {
 interface WelcomeWizardProps {
   show: boolean;
   onTeamSelect: (team: number) => void;
+  onScheduleSelect?: (schedule: ScheduleOption) => void;
   onSkip?: () => void;
   onHide: (vacationAllowance?: { amount: number; unit: VacationAllowanceUnit }) => void;
   onDefer?: () => void;
   isLoading?: boolean;
+  mode?: "onboarding" | "change-team" | "change-schedule";
   startStep?: WizardStep;
 }
 
 /**
- * Present a four-step onboarding modal that guides users through welcome, feature highlights, team selection, and optional vacation allowance setup.
+ * Present a multi-step onboarding modal that guides users through welcome, feature highlights, schedule selection,
+ * optional team selection, and optional vacation allowance setup.
  *
  * @param show - Whether the wizard modal is visible
  * @param onTeamSelect - Called with the chosen team number when a team button is selected
+ * @param onScheduleSelect - Optional callback invoked when the user selects a schedule
  * @param onSkip - Optional callback invoked when the user chooses to browse all teams instead of selecting one
  * @param onHide - Called when the wizard is completed with optional vacation allowance data (marks onboarding as done)
  * @param onDefer - Optional callback invoked when user clicks "Maybe Later" (defers wizard to next visit)
  * @param isLoading - When true, disables interactions and displays a setup spinner
- * @param startStep - Initial step to show when the wizard opens ("welcome" | "features" | "team-selection" | "vacation-allowance")
+ * @param mode - Determines the wizard flow ("onboarding" | "change-team" | "change-schedule")
+ * @param startStep - Initial step to show when the wizard opens ("welcome" | "features" | "schedule-selection" | "team-selection" | "vacation-allowance")
  * @returns The WelcomeWizard React element
  */
 export function WelcomeWizard({
   show,
   onTeamSelect,
+  onScheduleSelect,
   onSkip,
   onHide,
   onDefer,
   isLoading = false,
-  startStep = "welcome",
+  mode = "onboarding",
+  startStep = mode === "change-team"
+    ? "team-selection"
+    : mode === "change-schedule"
+      ? "schedule-selection"
+      : "welcome",
 }: WelcomeWizardProps) {
+  const { scheduleOption, settings } = useSettings();
   const [currentStep, setCurrentStep] = useState<WizardStep>(startStep);
   const initialStepRef = useRef(startStep);
   const firstButtonRef = useRef<HTMLButtonElement>(null);
 
-  // Vacation allowance form state
-  const [vacationAmount, setVacationAmount] = useState<string>("");
-  const [vacationUnit, setVacationUnit] = useState<VacationAllowanceUnit>("days");
+  // Vacation allowance form state - initialize from settings
+  const [vacationAmount, setVacationAmount] = useState<string>(() => {
+    const amount = settings.vacationAllowance?.amount ?? 0;
+    return amount > 0 ? amount.toString() : "";
+  });
+  const [vacationUnit, setVacationUnit] = useState<VacationAllowanceUnit>(
+    settings.vacationAllowance?.unit ?? "days",
+  );
+
+  const [selectedSchedule, setSelectedSchedule] = useState<ScheduleOption | null>(
+    scheduleOption ?? null,
+  );
 
   // Sync currentStep when startStep prop changes
   useEffect(() => {
@@ -82,22 +110,66 @@ export function WelcomeWizard({
     }
   }, [startStep]);
 
-  const teams = Array.from({ length: CONFIG.TEAMS_COUNT }, (_, i) => i + 1);
+  useEffect(() => {
+    setSelectedSchedule(scheduleOption ?? null);
+  }, [scheduleOption]);
 
   const SETTINGS_LOCATION_TEXT = "Settings panel (⚙️ in the top right)";
 
-  const getStepNumber = () => {
+  const isChangeTeamFlow = mode === "change-team";
+  const isChangeScheduleFlow = mode === "change-schedule";
+  const selectedScheduleConfig = SCHEDULE_OPTIONS.find(
+    (option) => option.value === selectedSchedule,
+  );
+  const shouldShowTeamSelection = selectedScheduleConfig?.showsTeamSelection ?? false;
+  const hasTeamSelectionStep = shouldShowTeamSelection || isChangeTeamFlow;
+  const teamCount = getTeamCountForOption(selectedSchedule);
+  const teams = Array.from({ length: teamCount }, (_, i) => i + 1);
+
+  /**
+   * Calculate total number of steps in the wizard based on mode and schedule configuration.
+   *
+   * Step count varies by mode:
+   * - change-team: 1 step (team selection only)
+   * - change-schedule: 1 step (schedule) + optional team selection = 1-2 steps
+   * - onboarding: 5 steps (welcome, features, schedule, optional team, vacation)
+   *
+   * Team selection step is included when:
+   * - In change-team mode (always shown)
+   * - Schedule has showsTeamSelection=true (multi-team schedules)
+   */
+  const getTotalSteps = () => {
+    if (isChangeTeamFlow) return 1;
+    if (isChangeScheduleFlow) return shouldShowTeamSelection ? 2 : 1;
+    return shouldShowTeamSelection ? 5 : 4;
+  };
+
+  /**
+   * Get current step index (1-based) for progress tracking.
+   *
+   * Maps step names to step numbers accounting for conditional team selection:
+   * - Onboarding: welcome(1), features(2), schedule(3), [team(4)], vacation(4 or 5)
+   * - Change-schedule: schedule(1), [team(2)]
+   * - Change-team: team(1)
+   */
+  const getStepIndex = () => {
+    if (isChangeTeamFlow) return 1;
+    if (isChangeScheduleFlow) {
+      return currentStep === "team-selection" ? 2 : 1;
+    }
     switch (currentStep) {
       case "welcome":
-        return "1";
+        return 1;
       case "features":
-        return "2";
+        return 2;
+      case "schedule-selection":
+        return 3;
       case "team-selection":
-        return "3";
+        return 4;
       case "vacation-allowance":
-        return "4";
+        return shouldShowTeamSelection ? 5 : 4;
       default:
-        return "1";
+        return 1;
     }
   };
 
@@ -114,11 +186,19 @@ export function WelcomeWizard({
 
   const handleTeamSelect = (team: number) => {
     onTeamSelect(team);
+    if (isChangeScheduleFlow || isChangeTeamFlow) {
+      onHide();
+      return;
+    }
     nextStep(); // Go to vacation allowance step
   };
 
   const handleSkip = () => {
     onSkip?.();
+    if (isChangeScheduleFlow || isChangeTeamFlow) {
+      onHide();
+      return;
+    }
     nextStep(); // Go to vacation allowance step
   };
 
@@ -148,16 +228,41 @@ export function WelcomeWizard({
     if (currentStep === "welcome") {
       setCurrentStep("features");
     } else if (currentStep === "features") {
-      setCurrentStep("team-selection");
+      setCurrentStep("schedule-selection");
+    } else if (currentStep === "schedule-selection") {
+      if (selectedSchedule && selectedSchedule !== scheduleOption) {
+        onScheduleSelect?.(selectedSchedule);
+      }
+      if (isChangeScheduleFlow || isChangeTeamFlow) {
+        if (shouldShowTeamSelection) {
+          setCurrentStep("team-selection");
+        } else {
+          onHide();
+        }
+        return;
+      }
+      setCurrentStep(shouldShowTeamSelection ? "team-selection" : "vacation-allowance");
     } else if (currentStep === "team-selection") {
-      setCurrentStep("vacation-allowance");
+      if (isChangeScheduleFlow || isChangeTeamFlow) {
+        onHide();
+      } else {
+        setCurrentStep("vacation-allowance");
+      }
     }
   };
 
   const prevStep = () => {
     if (currentStep === "vacation-allowance") {
-      setCurrentStep("team-selection");
+      setCurrentStep(shouldShowTeamSelection ? "team-selection" : "schedule-selection");
     } else if (currentStep === "team-selection") {
+      // In change-team mode, allow going back to schedule-selection to change schedule
+      setCurrentStep("schedule-selection");
+    } else if (currentStep === "schedule-selection") {
+      if (isChangeScheduleFlow || isChangeTeamFlow) {
+        // When going back from schedule-selection in change mode, close the wizard
+        onHide();
+        return;
+      }
       setCurrentStep("features");
     } else if (currentStep === "features") {
       setCurrentStep("welcome");
@@ -165,18 +270,9 @@ export function WelcomeWizard({
   };
 
   const getProgressPercentage = () => {
-    switch (currentStep) {
-      case "welcome":
-        return 25;
-      case "features":
-        return 50;
-      case "team-selection":
-        return 75;
-      case "vacation-allowance":
-        return 100;
-      default:
-        return 0;
-    }
+    const totalSteps = getTotalSteps();
+    const stepIndex = getStepIndex();
+    return (stepIndex / totalSteps) * 100;
   };
 
   const getStepTitle = () => {
@@ -185,6 +281,8 @@ export function WelcomeWizard({
         return "Welcome to Worktime! 👋";
       case "features":
         return "What can Worktime do? ✨";
+      case "schedule-selection":
+        return "Pick Your Schedule 🗓️";
       case "team-selection":
         return "Choose Your Experience 🎯";
       case "vacation-allowance":
@@ -202,11 +300,11 @@ export function WelcomeWizard({
         </div>
         <h4 className="text-primary mb-3">Welcome to Worktime!</h4>
         <p className="lead mb-3">
-          Your personal 24/7 shift tracker and time-off planner for 5-team continuous operations
+          Your personal shift tracker and time-off planner, built for flexible schedules
         </p>
         <p className="text-muted">
-          Worktime helps you stay on top of your shift schedule with real-time tracking, countdown
-          timers, and integrated time-off management - all offline-capable!
+          Worktime helps you stay on top of your schedule with real-time tracking, countdown timers,
+          and integrated time-off management - stored locally in your browser.
         </p>
       </div>
       <div className="d-flex justify-content-between">
@@ -252,9 +350,9 @@ export function WelcomeWizard({
             <div className="d-flex align-items-start">
               <i className="bi bi-wifi-off text-info me-3 mt-1" style={{ fontSize: "1.5rem" }}></i>
               <div>
-                <h6 className="mb-1">Works Offline</h6>
+                <h6 className="mb-1">Local-First Data</h6>
                 <small className="text-muted">
-                  No internet? No problem - fully functional offline
+                  Your settings and events are saved in your browser for quick access
                 </small>
               </div>
             </div>
@@ -264,7 +362,7 @@ export function WelcomeWizard({
               <i className="bi bi-people text-warning me-3 mt-1" style={{ fontSize: "1.5rem" }}></i>
               <div>
                 <h6 className="mb-1">Team Overview</h6>
-                <small className="text-muted">See who's working across all 5 teams</small>
+                <small className="text-muted">See who is working across your schedule</small>
               </div>
             </div>
           </Col>
@@ -297,16 +395,77 @@ export function WelcomeWizard({
           <i className="bi bi-arrow-left me-1"></i> Back
         </Button>
         <Button variant="primary" onClick={nextStep} disabled={isLoading}>
-          Choose My Team <i className="bi bi-arrow-right ms-1"></i>
+          Choose a Schedule <i className="bi bi-arrow-right ms-1"></i>
         </Button>
       </div>
     </>
   );
 
+  const renderScheduleSelectionStep = () => {
+    const handleScheduleChange = (schedule: ScheduleOption) => {
+      setSelectedSchedule(schedule);
+    };
+    const handleBackClick = () => {
+      if (isChangeScheduleFlow) {
+        onHide();
+        return;
+      }
+      prevStep();
+    };
+    const continueLabel = isChangeScheduleFlow
+      ? shouldShowTeamSelection
+        ? "Continue"
+        : "Save Schedule"
+      : "Continue";
+
+    return (
+      <>
+        <div className="text-center mb-4">
+          <h5 className="mb-2">Which roster matches your team?</h5>
+          <p className="text-muted">This helps us tailor your setup. You can change it later.</p>
+        </div>
+
+        <div className="mb-4">
+          {SCHEDULE_OPTIONS.map((schedule) => (
+            <Button
+              key={schedule.value}
+              variant={selectedSchedule === schedule.value ? "primary" : "outline-primary"}
+              className="w-100 text-start mb-2"
+              onClick={() => handleScheduleChange(schedule.value)}
+              disabled={isLoading || !schedule.isAvailable}
+              title={!schedule.isAvailable ? "This schedule option is coming soon" : undefined}
+              ref={
+                currentStep === "schedule-selection" && schedule.value === "9-5"
+                  ? firstButtonRef
+                  : undefined
+              }
+            >
+              <div className="fw-semibold d-flex align-items-center gap-2">
+                <span>{schedule.title}</span>
+                {!schedule.isAvailable && <span className="badge bg-secondary">Coming Soon</span>}
+              </div>
+              <small className="d-block text-muted">{schedule.description}</small>
+            </Button>
+          ))}
+        </div>
+
+        <div className="d-flex justify-content-between">
+          <Button variant="outline-secondary" onClick={handleBackClick} disabled={isLoading}>
+            <i className={`bi ${isChangeScheduleFlow ? "bi-x-lg" : "bi-arrow-left"} me-1`}></i>{" "}
+            {isChangeScheduleFlow ? "Cancel" : "Back"}
+          </Button>
+          <Button variant="primary" onClick={nextStep} disabled={isLoading || !selectedSchedule}>
+            {continueLabel} <i className="bi bi-arrow-right ms-1"></i>
+          </Button>
+        </div>
+      </>
+    );
+  };
+
   const renderTeamSelectionStep = () => (
     <>
       <div className="text-center mb-4">
-        <h5 className="mb-3">How would you like to use Worktime?</h5>
+        <h5 className="mb-3">Choose your team</h5>
         <p className="text-muted">You can always change this later in the app.</p>
       </div>
 
@@ -333,18 +492,23 @@ export function WelcomeWizard({
         </Row>
       </div>
 
-      <hr />
+      {/* Only show Browse All Teams option if there are multiple teams */}
+      {teamCount > 1 && (
+        <>
+          <hr />
 
-      <div className="text-center">
-        <h6 className="mb-2">Option 2: Browse All Teams</h6>
-        <p className="small text-muted mb-3">
-          View shift information for all teams without personalization.
-        </p>
-        <Button variant="outline-secondary" onClick={handleSkip} disabled={isLoading}>
-          <i className="bi bi-eye me-1"></i>
-          Browse All Teams
-        </Button>
-      </div>
+          <div className="text-center">
+            <h6 className="mb-2">Option 2: Browse All Teams</h6>
+            <p className="small text-muted mb-3">
+              View shift information for all teams without personalization.
+            </p>
+            <Button variant="outline-secondary" onClick={handleSkip} disabled={isLoading}>
+              <i className="bi bi-eye me-1"></i>
+              Browse All Teams
+            </Button>
+          </div>
+        </>
+      )}
 
       <div className="d-flex justify-content-start mt-3">
         <Button variant="outline-secondary" size="sm" onClick={prevStep} disabled={isLoading}>
@@ -466,7 +630,9 @@ export function WelcomeWizard({
             className="mb-2"
           />
           <div className="d-flex justify-content-between small text-muted">
-            <span>Step {getStepNumber()} of 4</span>
+            <span>
+              Step {getStepIndex()} of {getTotalSteps()}
+            </span>
             <span>{getProgressPercentage()}% Complete</span>
           </div>
         </div>
@@ -479,7 +645,11 @@ export function WelcomeWizard({
           <>
             {currentStep === "welcome" && renderWelcomeStep()}
             {currentStep === "features" && renderFeaturesStep()}
-            {currentStep === "team-selection" && renderTeamSelectionStep()}
+            {currentStep === "schedule-selection" && renderScheduleSelectionStep()}
+            {currentStep === "team-selection" && hasTeamSelectionStep && renderTeamSelectionStep()}
+            {currentStep === "team-selection" &&
+              !hasTeamSelectionStep &&
+              renderScheduleSelectionStep()}
             {currentStep === "vacation-allowance" && renderVacationAllowanceStep()}
           </>
         )}

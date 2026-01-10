@@ -75,12 +75,10 @@ vi.mock("../../src/utils/shiftCalculations", () => ({
     isWorking: true,
     className: "shift-morning",
   })),
-}));
-
-vi.mock("../../src/utils/config", () => ({
-  CONFIG: {
-    TEAMS_COUNT: 5,
-  },
+  getShiftDisplay: vi.fn(() => ({
+    displayName: "Morning",
+    displayHours: "07:00-15:00",
+  })),
 }));
 
 const defaultProps = {
@@ -109,9 +107,9 @@ describe("ScheduleView", () => {
     it("displays navigation buttons", () => {
       renderWithProviders(<ScheduleView {...defaultProps} />);
 
-      expect(screen.getByText("Previous")).toBeInTheDocument();
+      expect(screen.getByLabelText("Go to previous week")).toBeInTheDocument();
       expect(screen.getByText("This Week")).toBeInTheDocument();
-      expect(screen.getByText("Next")).toBeInTheDocument();
+      expect(screen.getByLabelText("Go to next week")).toBeInTheDocument();
     });
 
     it("shows date picker", () => {

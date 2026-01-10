@@ -15,6 +15,7 @@
 
 import type { ReactNode } from "react";
 import { createContext, useCallback, useContext, useMemo } from "react";
+import { SCHEDULE_OPTIONS, type ScheduleOption } from "../data/rosters";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import type { VacationAllowanceSettings } from "../utils/vacationCalculations";
 import { sanitizeVacationAllowance } from "../utils/vacationCalculations";
@@ -40,6 +41,8 @@ interface SettingsContextType {
   // Unified user state additions:
   myTeam: number | null; // The user's team from onboarding
   setMyTeam: (team: number | null) => void;
+  scheduleOption: ScheduleOption | null;
+  setScheduleOption: (schedule: ScheduleOption | null) => void;
   hasCompletedOnboarding: boolean;
   setHasCompletedOnboarding: (completed: boolean) => void;
   // Atomic update for onboarding completion with team selection
@@ -65,12 +68,14 @@ export const defaultSettings: UserSettings = {
 interface WorktimeUserState {
   hasCompletedOnboarding: boolean;
   myTeam: number | null; // The user's team from onboarding
+  scheduleOption: ScheduleOption | null;
   settings: UserSettings;
 }
 
 const defaultUserState: WorktimeUserState = {
   hasCompletedOnboarding: false,
   myTeam: null,
+  scheduleOption: null,
   settings: defaultSettings,
 };
 
@@ -88,6 +93,7 @@ const normalizeUserState = (state: unknown): WorktimeUserState => {
   const s = state as Record<string, unknown>;
   const settings = typeof s.settings === "object" && s.settings !== null ? s.settings : {};
   const settingsRecord = settings as Record<string, unknown>;
+  const scheduleOptionValues = new Set(SCHEDULE_OPTIONS.map((option) => option.value));
 
   const timeFormat = ["12h", "24h"].includes(settingsRecord.timeFormat as string)
     ? (settingsRecord.timeFormat as TimeFormat)
@@ -115,6 +121,25 @@ const normalizeUserState = (state: unknown): WorktimeUserState => {
         : typeof s.myTeam === "number" || s.myTeam === null
           ? s.myTeam
           : defaultUserState.myTeam,
+    scheduleOption: (() => {
+      if (s.scheduleOption === undefined) {
+        return defaultUserState.scheduleOption;
+      }
+      if (s.scheduleOption === null) {
+        return null;
+      }
+      if (
+        typeof s.scheduleOption === "string" &&
+        scheduleOptionValues.has(s.scheduleOption as ScheduleOption)
+      ) {
+        return s.scheduleOption as ScheduleOption;
+      }
+      // Invalid schedule option detected - log warning and fall back to default
+      console.warn(
+        `Invalid schedule option "${s.scheduleOption}" found in localStorage. Falling back to default.`,
+      );
+      return defaultUserState.scheduleOption;
+    })(),
     settings: {
       timeFormat,
       theme,
@@ -201,6 +226,16 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
     [setUserState],
   );
 
+  const setScheduleOption = useCallback(
+    (schedule: ScheduleOption | null) => {
+      setUserState((prev) => ({
+        ...prev,
+        scheduleOption: schedule,
+      }));
+    },
+    [setUserState],
+  );
+
   const setHasCompletedOnboarding = useCallback(
     (completed: boolean) => {
       setUserState((prev) => ({
@@ -249,6 +284,8 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
       resetSettings,
       myTeam: userState.myTeam,
       setMyTeam,
+      scheduleOption: userState.scheduleOption,
+      setScheduleOption,
       hasCompletedOnboarding: userState.hasCompletedOnboarding,
       setHasCompletedOnboarding,
       completeOnboardingWithTeam,
@@ -262,6 +299,7 @@ export function SettingsProvider({ children }: SettingsProviderProps) {
       updateVacationAllowance,
       resetSettings,
       setMyTeam,
+      setScheduleOption,
       setHasCompletedOnboarding,
       completeOnboardingWithTeam,
       completeOnboardingWithVacation,

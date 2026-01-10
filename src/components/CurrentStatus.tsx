@@ -8,15 +8,10 @@ import ProgressBar from "react-bootstrap/ProgressBar";
 import Row from "react-bootstrap/Row";
 import Tooltip from "react-bootstrap/Tooltip";
 import { useSettings } from "../contexts/SettingsContext";
+import { getScheduleConfig, getEffectiveTeam } from "../utils/scheduleUtils";
 import { useCountdown } from "../hooks/useCountdown";
 import { useLiveTime } from "../hooks/useLiveTime";
-import { CONFIG } from "../utils/config";
-import {
-  dayjs,
-  formatTimeByPreference,
-  formatYYWWD,
-  getLocalizedShiftTime,
-} from "../utils/dateTimeUtils";
+import { dayjs, formatTimeByPreference, formatYYWWD } from "../utils/dateTimeUtils";
 import type { UpcomingShiftResult, OffDayProgress, ShiftResult } from "../utils/shiftCalculations";
 import {
   calculateShift,
@@ -25,7 +20,9 @@ import {
   getNextShift,
   getOffDayProgress,
   getShiftByCode,
+  getShiftDisplay,
   getShiftCode,
+  getFormattedShiftTime,
   isCurrentlyWorking,
 } from "../utils/shiftCalculations";
 import { ShiftTimeline } from "./ShiftTimeline";
@@ -33,6 +30,7 @@ import { ShiftTimeline } from "./ShiftTimeline";
 interface CurrentStatusProps {
   myTeam: number | null; // The user's team from onboarding
   onChangeTeam: () => void;
+  onChangeSchedule?: () => void;
   onShowWhoIsWorking?: () => void;
 }
 
@@ -44,21 +42,30 @@ interface CurrentStatusProps {
  *
  * @param myTeam - The user's team number from onboarding, or `null` to show a generic view.
  * @param onChangeTeam - Callback invoked when the user requests to select or change their team.
+ * @param onChangeSchedule - Optional callback invoked when the user requests to change their schedule.
  * @param onShowWhoIsWorking - Optional callback to show who is currently working; the corresponding control is disabled if omitted.
  * @returns A React element containing the Current Status card with status, timeline and next-shift information.
  */
-export function CurrentStatus({ myTeam, onChangeTeam, onShowWhoIsWorking }: CurrentStatusProps) {
+export function CurrentStatus({
+  myTeam,
+  onChangeTeam,
+  onChangeSchedule,
+  onShowWhoIsWorking,
+}: CurrentStatusProps) {
   // Generate unique IDs for tooltips to avoid HTML ID conflicts
   const dateTooltipId = useId();
   const teamTooltipId = useId();
+  const { settings, scheduleOption } = useSettings();
+  const scheduleConfig = getScheduleConfig(scheduleOption);
+  const hasTeams = scheduleConfig.showsTeamSelection ?? true;
+  const teamCount = scheduleConfig.shiftConfig.teamCount;
 
-  // Validate and sanitize myTeam prop
-  const validatedTeam =
-    typeof myTeam === "number" && myTeam >= 1 && myTeam <= CONFIG.TEAMS_COUNT ? myTeam : null;
+  // Get effective team - for single-user schedules, this returns 1 when myTeam is null
+  const validatedTeam = useMemo(
+    () => getEffectiveTeam(myTeam, scheduleOption),
+    [myTeam, scheduleOption],
+  );
 
-  if (myTeam !== null && validatedTeam === null) {
-    console.warn(`Invalid team number: ${myTeam}. Expected 1-${CONFIG.TEAMS_COUNT}`);
-  }
   // Always use today's date for current status
   const today = dayjs();
   const liveTime = useLiveTime();
@@ -69,21 +76,21 @@ export function CurrentStatus({ myTeam, onChangeTeam, onShowWhoIsWorking }: Curr
     if (!validatedTeam) return null;
 
     const shiftDay = getCurrentShiftDay(today);
-    const shift = calculateShift(shiftDay, validatedTeam);
+    const shift = calculateShift(shiftDay, validatedTeam, scheduleOption ?? undefined);
 
     return {
       date: shiftDay,
       shift,
-      code: getShiftCode(shiftDay, validatedTeam),
+      code: getShiftCode(today, validatedTeam, scheduleOption ?? undefined),
       teamNumber: validatedTeam,
     };
-  }, [validatedTeam, todayMinuteKey]); // oxlint-disable-line react/exhaustive-deps -- Using minute-based ISO string to limit recalculation to once per minute instead of every render
+  }, [validatedTeam, todayMinuteKey, scheduleOption]); // oxlint-disable-line react/exhaustive-deps -- Using minute-based ISO string to limit recalculation to once per minute instead of every render
 
   // Calculate next shift from today
   const nextShift = useMemo((): UpcomingShiftResult | null => {
     if (!validatedTeam) return null;
-    return getNextShift(today, validatedTeam);
-  }, [validatedTeam, todayMinuteKey]); // oxlint-disable-line react/exhaustive-deps -- Using minute-based ISO string to limit recalculation to once per minute instead of every render
+    return getNextShift(today, validatedTeam, scheduleOption ?? undefined);
+  }, [validatedTeam, todayMinuteKey, scheduleOption]); // oxlint-disable-line react/exhaustive-deps -- Using minute-based ISO string to limit recalculation to once per minute instead of every render
 
   // Calculate next shift change across all teams when no team is selected
   const nextShiftAnyTeam = useMemo((): (UpcomingShiftResult & { teamNumber: number }) | null => {
@@ -96,7 +103,7 @@ export function CurrentStatus({ myTeam, onChangeTeam, onShowWhoIsWorking }: Curr
     // Check shifts for today and next few days to find the next shift change
     for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
       const checkDate = now.add(dayOffset, "day");
-      const allTeamsShifts = getAllTeamsShifts(checkDate);
+      const allTeamsShifts = getAllTeamsShifts(checkDate, scheduleOption ?? undefined);
 
       for (const teamShift of allTeamsShifts) {
         if (!teamShift.shift.isWorking || !teamShift.shift.start) continue;
@@ -122,14 +129,14 @@ export function CurrentStatus({ myTeam, onChangeTeam, onShowWhoIsWorking }: Curr
     }
 
     return earliestShift;
-  }, [validatedTeam, todayMinuteKey]); // oxlint-disable-line react/exhaustive-deps -- Using minute-based ISO string to limit recalculation to once per minute instead of every render
+  }, [validatedTeam, todayMinuteKey, scheduleOption]); // oxlint-disable-line react/exhaustive-deps -- Using minute-based ISO string to limit recalculation to once per minute instead of every render
 
   // Find which team is currently working
   const currentWorkingTeam = useMemo((): ShiftResult | null => {
     const now = today;
 
     // Check today's shifts
-    const allTeamsToday = getAllTeamsShifts(today);
+    const allTeamsToday = getAllTeamsShifts(today, scheduleOption ?? undefined);
     const workingToday = allTeamsToday.find((teamShift) => {
       if (!teamShift.shift.isWorking) return false;
       return isCurrentlyWorking(teamShift.shift, teamShift.date, now);
@@ -139,20 +146,20 @@ export function CurrentStatus({ myTeam, onChangeTeam, onShowWhoIsWorking }: Curr
 
     // Also check yesterday's shifts (for night shifts spanning midnight)
     const yesterday = today.subtract(1, "day");
-    const allTeamsYesterday = getAllTeamsShifts(yesterday);
+    const allTeamsYesterday = getAllTeamsShifts(yesterday, scheduleOption ?? undefined);
     const workingYesterday = allTeamsYesterday.find((teamShift) => {
       if (!teamShift.shift.isWorking) return false;
       return isCurrentlyWorking(teamShift.shift, teamShift.date, now);
     });
 
     return workingYesterday || null;
-  }, [todayMinuteKey]); // oxlint-disable-line react/exhaustive-deps -- Using minute-based ISO string to limit recalculation to once per minute instead of every render
+  }, [todayMinuteKey, scheduleOption]); // oxlint-disable-line react/exhaustive-deps -- Using minute-based ISO string to limit recalculation to once per minute instead of every render
 
   // Calculate off-day progress when team is off
   const offDayProgress = useMemo((): OffDayProgress | null => {
     if (!validatedTeam) return null;
-    return getOffDayProgress(today, validatedTeam);
-  }, [validatedTeam, todayMinuteKey]); // oxlint-disable-line react/exhaustive-deps -- Using minute-based ISO string to limit recalculation to once per minute instead of every render
+    return getOffDayProgress(today, validatedTeam, scheduleOption ?? undefined);
+  }, [validatedTeam, todayMinuteKey, scheduleOption]); // oxlint-disable-line react/exhaustive-deps -- Using minute-based ISO string to limit recalculation to once per minute instead of every render
 
   // Calculate next shift start time for countdown
   const nextShiftStartTime = useMemo(() => {
@@ -169,20 +176,18 @@ export function CurrentStatus({ myTeam, onChangeTeam, onShowWhoIsWorking }: Curr
   // Countdown to next shift
   const countdown = useCountdown(nextShiftStartTime);
 
-  // Get current time's shift code for live display
+  // Get current time's shift code for live display (roster-aware)
   const currentTimeShiftCode = useMemo(() => {
-    const hour = liveTime.hour();
-    if (hour >= 7 && hour < 15) return "M";
-    if (hour >= 15 && hour < 23) return "E";
-    return "N"; // 23:00-07:00
-  }, [liveTime]);
+    if (!validatedTeam) return null;
+    const shiftDay = getCurrentShiftDay(liveTime);
+    const shift = calculateShift(shiftDay, validatedTeam, scheduleOption ?? undefined);
+    return shift.code;
+  }, [liveTime, validatedTeam, scheduleOption]);
 
   // Get the proper shift day for date code display (previous day for night shifts)
   const currentShiftDay = useMemo(() => {
     return getCurrentShiftDay(liveTime);
   }, [liveTime]);
-
-  const { settings } = useSettings();
 
   return (
     <Col className="mb-4">
@@ -230,14 +235,31 @@ export function CurrentStatus({ myTeam, onChangeTeam, onShowWhoIsWorking }: Curr
                 <i className="bi bi-people me-1"></i>
                 Who's On?
               </Button>
-              <Button
-                variant={validatedTeam ? "outline-secondary" : "primary"}
-                size="sm"
-                onClick={onChangeTeam}
-              >
-                <i className={`bi ${validatedTeam ? "bi-person-gear" : "bi-person-plus"} me-1`}></i>
-                {validatedTeam ? "Change Team" : "Select Team"}
-              </Button>
+              {/* Show team selection button for multi-team schedules, or schedule change button for single-team schedules */}
+              {hasTeams && teamCount > 1 ? (
+                <Button
+                  variant={validatedTeam ? "outline-secondary" : "primary"}
+                  size="sm"
+                  onClick={onChangeTeam}
+                >
+                  <i
+                    className={`bi ${validatedTeam ? "bi-person-gear" : "bi-person-plus"} me-1`}
+                  ></i>
+                  {validatedTeam ? "Change Team" : "Select Team"}
+                </Button>
+              ) : (
+                onChangeSchedule && (
+                  <Button
+                    variant="outline-secondary"
+                    size="sm"
+                    onClick={onChangeSchedule}
+                    title="Change your work schedule"
+                  >
+                    <i className="bi bi-calendar-week me-1"></i>
+                    Change Schedule
+                  </Button>
+                )
+              )}
             </div>
           </div>
 
@@ -256,7 +278,11 @@ export function CurrentStatus({ myTeam, onChangeTeam, onShowWhoIsWorking }: Curr
               <Card className="h-100">
                 <Card.Body className="d-flex flex-column">
                   <Card.Title as="h6" className="mb-2 text-primary">
-                    {validatedTeam ? "🏷️ Your Team Status" : "👥 Current Status"}
+                    {validatedTeam
+                      ? "🏷️ Your Team Status"
+                      : hasTeams
+                        ? "👥 Current Status"
+                        : "📅 Current Status"}
                   </Card.Title>
                   <div className="flex-grow-1">
                     {validatedTeam && currentShift ? (
@@ -267,11 +293,20 @@ export function CurrentStatus({ myTeam, onChangeTeam, onShowWhoIsWorking }: Curr
                             <Tooltip id={teamTooltipId}>
                               <strong>Your Team Today</strong>
                               <br />
-                              Code: <strong>{currentShift.shift.code}</strong>
+                              Code:{" "}
+                              <strong>
+                                {getShiftDisplay(currentShift.shift, scheduleOption).displayCode}
+                              </strong>
                               <br />
                               {(() => {
                                 const shift = getShiftByCode(currentShift.shift.code);
-                                return `${shift.emoji} ${shift.name} shift (${shift.start && shift.end ? getLocalizedShiftTime(shift.start, shift.end, settings.timeFormat) : shift.hours})`;
+                                const { displayName } = getShiftDisplay(shift, scheduleOption);
+                                const formattedTime = getFormattedShiftTime(
+                                  shift,
+                                  scheduleOption,
+                                  settings.timeFormat,
+                                );
+                                return `${shift.emoji} ${displayName} shift (${formattedTime})`;
                               })()}
                               <br />
                               <em>Full code: {currentShift.code}</em>
@@ -281,14 +316,16 @@ export function CurrentStatus({ myTeam, onChangeTeam, onShowWhoIsWorking }: Curr
                           <Badge
                             className={`shift-code shift-badge-lg cursor-help ${getShiftByCode(currentShift.shift.code).className}`}
                           >
-                            Team {validatedTeam}: {currentShift.shift.name}
+                            {hasTeams
+                              ? `Team ${validatedTeam}: ${getShiftDisplay(currentShift.shift, scheduleOption).displayName}`
+                              : getShiftDisplay(currentShift.shift, scheduleOption).displayName}
                           </Badge>
                         </OverlayTrigger>
                         {currentShift.shift.start && currentShift.shift.end && (
                           <div className="small text-muted mt-1">
-                            {getLocalizedShiftTime(
-                              currentShift.shift.start,
-                              currentShift.shift.end,
+                            {getFormattedShiftTime(
+                              currentShift.shift,
+                              scheduleOption,
                               settings.timeFormat,
                             )}
                           </div>
@@ -315,16 +352,17 @@ export function CurrentStatus({ myTeam, onChangeTeam, onShowWhoIsWorking }: Curr
                             <Badge
                               className={`shift-code shift-badge-lg ${getShiftByCode(currentWorkingTeam.shift.code).className}`}
                             >
-                              Team {currentWorkingTeam.teamNumber}: {currentWorkingTeam.shift.name}
+                              {hasTeams
+                                ? `Team ${currentWorkingTeam.teamNumber}: ${getShiftDisplay(currentWorkingTeam.shift, scheduleOption).displayName}`
+                                : getShiftDisplay(currentWorkingTeam.shift, scheduleOption)
+                                    .displayName}
                             </Badge>
                             <div className="small text-muted mt-1">
-                              {currentWorkingTeam.shift.start && currentWorkingTeam.shift.end
-                                ? getLocalizedShiftTime(
-                                    currentWorkingTeam.shift.start,
-                                    currentWorkingTeam.shift.end,
-                                    settings.timeFormat,
-                                  )
-                                : currentWorkingTeam.shift.hours}
+                              {getFormattedShiftTime(
+                                currentWorkingTeam.shift,
+                                scheduleOption,
+                                settings.timeFormat,
+                              )}
                             </div>
                             <div className="small text-success mt-2">✅ Currently working</div>
                           </div>
@@ -337,10 +375,12 @@ export function CurrentStatus({ myTeam, onChangeTeam, onShowWhoIsWorking }: Curr
                           </div>
                         )}
                         <hr className="my-3" />
-                        <div className="small text-muted">
-                          💡 Select your team above for personalized shift tracking and countdown
-                          timers
-                        </div>
+                        {hasTeams && teamCount > 1 && (
+                          <div className="small text-muted">
+                            💡 Select your team above for personalized shift tracking and countdown
+                            timers
+                          </div>
+                        )}
                       </div>
                     ) : null}
                   </div>
@@ -358,16 +398,15 @@ export function CurrentStatus({ myTeam, onChangeTeam, onShowWhoIsWorking }: Curr
                     {validatedTeam && nextShift ? (
                       <div>
                         <div className="fw-semibold">
-                          {nextShift.date.format("ddd, MMM D")} - {nextShift.shift.name}
+                          {nextShift.date.format("ddd, MMM D")} -{" "}
+                          {getShiftDisplay(nextShift.shift, scheduleOption).displayName}
                         </div>
                         <div className="small text-muted">
-                          {nextShift.shift.start && nextShift.shift.end
-                            ? getLocalizedShiftTime(
-                                nextShift.shift.start,
-                                nextShift.shift.end,
-                                settings.timeFormat,
-                              )
-                            : nextShift.shift.hours}
+                          {getFormattedShiftTime(
+                            nextShift.shift,
+                            scheduleOption,
+                            settings.timeFormat,
+                          )}
                         </div>
                         {countdown && !countdown.isExpired && nextShiftStartTime && (
                           <Badge bg="info" className="mt-2">
@@ -380,18 +419,16 @@ export function CurrentStatus({ myTeam, onChangeTeam, onShowWhoIsWorking }: Curr
                     ) : nextShiftAnyTeam ? (
                       <div>
                         <div className="fw-semibold">
-                          Team {nextShiftAnyTeam.teamNumber}:{" "}
+                          {hasTeams ? `Team ${nextShiftAnyTeam.teamNumber}: ` : ""}
                           {nextShiftAnyTeam.date.format("ddd, MMM D")} -{" "}
-                          {nextShiftAnyTeam.shift.name}
+                          {getShiftDisplay(nextShiftAnyTeam.shift, scheduleOption).displayName}
                         </div>
                         <div className="small text-muted">
-                          {nextShiftAnyTeam.shift.start && nextShiftAnyTeam.shift.end
-                            ? getLocalizedShiftTime(
-                                nextShiftAnyTeam.shift.start,
-                                nextShiftAnyTeam.shift.end,
-                                settings.timeFormat,
-                              )
-                            : nextShiftAnyTeam.shift.hours}
+                          {getFormattedShiftTime(
+                            nextShiftAnyTeam.shift,
+                            scheduleOption,
+                            settings.timeFormat,
+                          )}
                         </div>
                         {countdown && !countdown.isExpired && nextShiftStartTime && (
                           <Badge bg="info" className="mt-2">
@@ -399,9 +436,11 @@ export function CurrentStatus({ myTeam, onChangeTeam, onShowWhoIsWorking }: Curr
                           </Badge>
                         )}
                         <hr className="my-3" />
-                        <div className="small text-muted">
-                          💡 Select your team above for personalized shift tracking
-                        </div>
+                        {hasTeams && teamCount > 1 && (
+                          <div className="small text-muted">
+                            💡 Select your team above for personalized shift tracking
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <div>

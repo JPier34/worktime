@@ -9,9 +9,10 @@ import { WelcomeWizard } from "./components/WelcomeWizard";
 import { EventStoreProvider } from "./contexts/EventStoreContext";
 import { SettingsProvider, useSettings } from "./contexts/SettingsContext";
 import { ToastProvider, useToast } from "./contexts/ToastContext";
+import type { ScheduleOption } from "./data/rosters";
 import { useShiftCalculation } from "./hooks/useShiftCalculation";
-import { CONFIG } from "./utils/config";
 import { dayjs } from "./utils/dateTimeUtils";
+import { getScheduleConfig, getTeamCountForOption } from "./utils/scheduleUtils";
 import type { VacationAllowanceUnit } from "./utils/vacationCalculations";
 
 /**
@@ -23,15 +24,19 @@ import type { VacationAllowanceUnit } from "./utils/vacationCalculations";
  */
 function AppContent() {
   const [showTeamModal, setShowTeamModal] = useState(false);
-  const [teamModalMode, setTeamModalMode] = useState<"onboarding" | "change-team">("onboarding");
+  const [teamModalMode, setTeamModalMode] = useState<
+    "onboarding" | "change-team" | "change-schedule"
+  >("onboarding");
   const [activeTab, setActiveTab] = useState("today");
   const [showAbout, setShowAbout] = useState(false);
-  const { showSuccess, showInfo } = useToast();
+  const { showSuccess, showInfo, showError } = useToast();
   const {
     myTeam,
     setMyTeam,
     hasCompletedOnboarding,
     completeOnboardingWithVacation,
+    scheduleOption,
+    setScheduleOption,
     updateVacationAllowance,
     settings,
   } = useSettings();
@@ -70,21 +75,30 @@ function AppContent() {
     const { team, date } = pendingDeepLinkRef.current;
 
     if (team) {
-      const teamNumber = parseInt(team, 10);
-      if (teamNumber >= 1 && teamNumber <= CONFIG.TEAMS_COUNT) {
-        setMyTeam(teamNumber);
+      try {
+        const teamNumber = parseInt(team, 10);
+        const teamCount = getTeamCountForOption(scheduleOption);
+        if (teamNumber >= 1 && teamNumber <= teamCount) {
+          setMyTeam(teamNumber);
+        }
+      } catch (error) {
+        console.error("Failed to process deep-link team parameter:", error);
       }
     }
 
     if (date) {
-      const parsedDate = dayjs(date);
-      if (parsedDate.isValid()) {
-        setCurrentDate(parsedDate);
+      try {
+        const parsedDate = dayjs(date);
+        if (parsedDate.isValid()) {
+          setCurrentDate(parsedDate);
+        }
+      } catch (error) {
+        console.error("Failed to process deep-link date parameter:", error);
       }
     }
 
     pendingDeepLinkRef.current = {};
-  }, [hasCompletedOnboarding, setMyTeam, setCurrentDate]);
+  }, [hasCompletedOnboarding, setMyTeam, setCurrentDate, scheduleOption]);
 
   // Show welcome wizard only on first visit (never completed onboarding)
   useEffect(() => {
@@ -125,8 +139,46 @@ function AppContent() {
     // Don't close modal yet - wizard continues to vacation allowance step
   };
 
+  const handleScheduleSelect = (schedule: ScheduleOption) => {
+    try {
+      const nextScheduleConfig = getScheduleConfig(schedule);
+      // Always reset team when changing schedules, regardless of team count
+      // Teams in different schedules represent different rosters
+      const scheduleChanged = schedule !== scheduleOption;
+      const teamsDisabled = !(nextScheduleConfig.showsTeamSelection ?? true);
+
+      if (scheduleChanged || teamsDisabled) {
+        // Only show notification if user had a team selected
+        if (myTeam !== null) {
+          setMyTeam(null);
+          // Provide appropriate message based on the reason for reset
+          if (scheduleChanged) {
+            showInfo(
+              "Your team selection has been reset because you changed schedules. Please select your team again.",
+              "ℹ️",
+            );
+          } else {
+            showInfo(
+              "Your team selection has been reset because the selected schedule does not use team assignments.",
+              "ℹ️",
+            );
+          }
+        }
+      }
+      setScheduleOption(schedule);
+    } catch (error) {
+      console.error("Failed to change schedule:", error);
+      showError("Failed to change schedule. Please try again.", "❌");
+    }
+  };
+
   const handleChangeTeam = () => {
     setTeamModalMode("change-team");
+    setShowTeamModal(true);
+  };
+
+  const handleChangeSchedule = () => {
+    setTeamModalMode("change-schedule");
     setShowTeamModal(true);
   };
 
@@ -167,11 +219,12 @@ function AppContent() {
     <ErrorBoundary>
       <div className="min-vh-100">
         <Container fluid>
-          <Header onShowAbout={() => setShowAbout(true)} />
+          <Header onShowAbout={() => setShowAbout(true)} onChangeSchedule={handleChangeSchedule} />
           <ErrorBoundary>
             <CurrentStatus
               myTeam={myTeam}
               onChangeTeam={handleChangeTeam}
+              onChangeSchedule={handleChangeSchedule}
               onShowWhoIsWorking={handleShowWhoIsWorking}
             />
           </ErrorBoundary>
@@ -188,6 +241,7 @@ function AppContent() {
           <WelcomeWizard
             show={showTeamModal}
             onTeamSelect={handleTeamSelect}
+            onScheduleSelect={handleScheduleSelect}
             onSkip={() => {
               // User chose to browse all teams - clear team selection
               setMyTeam(null);
@@ -195,7 +249,14 @@ function AppContent() {
             }}
             onHide={handleTeamModalHide}
             onDefer={handleWizardDefer}
-            startStep={teamModalMode === "onboarding" ? "welcome" : "team-selection"}
+            mode={teamModalMode}
+            startStep={
+              teamModalMode === "onboarding"
+                ? "welcome"
+                : teamModalMode === "change-schedule"
+                  ? "schedule-selection"
+                  : "team-selection"
+            }
           />
           <AboutModal show={showAbout} onHide={() => setShowAbout(false)} />
         </Container>

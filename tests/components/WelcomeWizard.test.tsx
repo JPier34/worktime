@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "../../src/App";
 import { WelcomeWizard } from "../../src/components/WelcomeWizard";
 import { SettingsProvider } from "../../src/contexts/SettingsContext";
+import { ToastProvider } from "../../src/contexts/ToastContext";
 
 const defaultProps = {
   show: true,
@@ -14,8 +15,29 @@ const defaultProps = {
   isLoading: false,
 };
 
+const defaultUserState = {
+  hasCompletedOnboarding: false,
+  myTeam: null,
+  scheduleOption: "5-shift",
+  settings: {
+    timeFormat: "24h",
+    theme: "auto",
+    notifications: "off",
+    vacationAllowance: {
+      amount: 0,
+      unit: "days",
+      hoursPerDay: 8,
+    },
+  },
+};
+
+const seedScheduleOption = () => {
+  window.localStorage.setItem("worktime_user_state", JSON.stringify(defaultUserState));
+};
+
 // Test wrapper with required providers
 function renderWithProviders(ui: React.ReactElement) {
+  seedScheduleOption();
   return render(<SettingsProvider>{ui}</SettingsProvider>);
 }
 
@@ -27,7 +49,7 @@ const findModalTitle = async (text: RegExp) => {
   return modalHeading;
 };
 
-const waitForStep = async (stepNumber: number, totalSteps: number = 4, timeout = 3000) => {
+const waitForStep = async (stepNumber: number, totalSteps: number = 5, timeout = 3000) => {
   await waitFor(
     () => {
       expect(
@@ -44,14 +66,19 @@ const navigateToTeamSelection = async (user: ReturnType<typeof userEvent.setup>)
     name: /Let's Get Started/i,
   });
   await user.click(getStartedButton);
-  await waitForStep(2);
+  await waitForStep(2, 5);
 
-  // Step 2 (features) -> Step 3 (team selection)
-  const chooseTeamButton = screen.getByRole("button", {
-    name: /Choose My Team/i,
+  // Step 2 (features) -> Step 3 (schedule selection)
+  const chooseScheduleButton = screen.getByRole("button", {
+    name: /Choose a Schedule/i,
   });
-  await user.click(chooseTeamButton);
-  await waitForStep(3);
+  await user.click(chooseScheduleButton);
+  await waitForStep(3, 5);
+
+  // Step 3 (schedule selection) -> Step 4 (team selection)
+  await user.click(screen.getByRole("button", { name: /5-shift/i }));
+  await user.click(screen.getByRole("button", { name: /Continue/i }));
+  await waitForStep(4, 5);
 };
 
 describe("WelcomeWizard", () => {
@@ -172,7 +199,9 @@ describe("WelcomeWizard", () => {
 
       // Navigate through wizard
       await user.click(screen.getByRole("button", { name: /Let's Get Started/i }));
-      await user.click(screen.getByRole("button", { name: /Choose My Team/i }));
+      await user.click(screen.getByRole("button", { name: /Choose a Schedule/i }));
+      await user.click(screen.getByRole("button", { name: /5-shift/i }));
+      await user.click(screen.getByRole("button", { name: /Continue/i }));
 
       // Select a team
       await user.click(screen.getByRole("button", { name: /Select Team 1/i }));
@@ -281,7 +310,7 @@ describe("WelcomeWizard", () => {
       await user.click(screen.getByRole("button", { name: /Back/i }));
 
       // Should go back to team selection
-      expect(screen.getByText(/How would you like to use Worktime?/i)).toBeInTheDocument();
+      expect(screen.getByText(/Choose your team/i)).toBeInTheDocument();
     });
 
     it("should show correct progress for vacation allowance step", () => {
@@ -294,7 +323,7 @@ describe("WelcomeWizard", () => {
         />,
       );
 
-      expect(screen.getByText(/Step 4 of 4/i)).toBeInTheDocument();
+      expect(screen.getByText(/Step 5 of 5/i)).toBeInTheDocument();
     });
 
     it("should show validation error for negative vacation amount", async () => {
@@ -406,6 +435,8 @@ describe("WelcomeWizard", () => {
         },
         writable: true,
       });
+
+      window.localStorage.setItem("worktime_user_state", JSON.stringify(defaultUserState));
     });
 
     afterEach(() => {
@@ -493,19 +524,24 @@ describe("WelcomeWizard", () => {
 
       // Verify welcome wizard appears with correct initial step
       await findModalTitle(/Welcome to Worktime/i);
-      expect(screen.getByText(/Step 1 of 4/i)).toBeInTheDocument();
+      expect(screen.getByText(/Step 1 of 5/i)).toBeInTheDocument();
 
       // Navigate to features step
       await user.click(screen.getByText("Let's Get Started!"));
-      expect(screen.getByText(/Step 2 of 4/i)).toBeInTheDocument();
+      expect(screen.getByText(/Step 2 of 5/i)).toBeInTheDocument();
 
-      // Navigate to team selection step
-      await user.click(screen.getByText(/Choose My Team/i));
-      expect(screen.getByText(/Step 3 of 4/i)).toBeInTheDocument();
+      // Navigate to schedule selection step
+      await user.click(screen.getByText(/Choose a Schedule/i));
+      expect(screen.getByText(/Step 3 of 5/i)).toBeInTheDocument();
+
+      // Choose 5-shift to reveal team selection
+      await user.click(screen.getByRole("button", { name: /5-shift/i }));
+      await user.click(screen.getByRole("button", { name: /Continue/i }));
+      expect(screen.getByText(/Step 4 of 5/i)).toBeInTheDocument();
 
       // Select a team to go to vacation allowance step
       await user.click(screen.getByLabelText(/Select Team 1/i));
-      expect(screen.getByText(/Step 4 of 4/i)).toBeInTheDocument();
+      expect(screen.getByText(/Step 5 of 5/i)).toBeInTheDocument();
     });
 
     it("should save vacation allowance when browsing all teams without selecting one", async () => {
@@ -575,37 +611,393 @@ describe("WelcomeWizard", () => {
       await user.click(changeTeamButton);
 
       // Should show the wizard again
-      await waitFor(() =>
-        expect(screen.getByText(/How would you like to use Worktime/i)).toBeInTheDocument(),
+      await waitFor(() => expect(screen.getByText(/Choose your team/i)).toBeInTheDocument());
+
+      // In change-team mode, selecting a team should close the wizard immediately (no vacation step)
+      await user.click(screen.getByLabelText(/Select Team 2/i));
+
+      // Wait for wizard to close
+      await waitFor(() => expect(screen.queryByText(/Choose your team/i)).not.toBeInTheDocument());
+
+      // Verify team was changed but vacation allowance remains unchanged
+      saved = JSON.parse(localStorage.getItem("worktime_user_state") || "{}");
+      expect(saved.settings?.vacationAllowance?.amount).toBe(25); // Unchanged from onboarding
+      expect(saved.settings?.vacationAllowance?.unit).toBe("days");
+      expect(saved.myTeam).toBe(2); // Team was changed
+    });
+
+    it("should navigate directly to schedule selection in change-schedule mode", async () => {
+      const onScheduleSelect = vi.fn();
+      const onHide = vi.fn();
+
+      renderWithProviders(
+        <WelcomeWizard
+          {...defaultProps}
+          mode="change-schedule"
+          onScheduleSelect={onScheduleSelect}
+          onHide={onHide}
+        />,
       );
 
-      // Navigate to vacation allowance step by selecting a team
-      await user.click(screen.getByLabelText(/Select Team 2/i));
-      expect(screen.getByText(/Set Up Vacation Tracking/i)).toBeInTheDocument();
+      // Should start directly at schedule selection
+      await waitFor(() => {
+        expect(screen.getByText(/Which roster matches your team\?/i)).toBeInTheDocument();
+      });
 
-      // Update vacation allowance
-      const updatedAmountInput = screen.getByLabelText(/Annual vacation allowance/i);
-      await user.clear(updatedAmountInput);
-      await user.type(updatedAmountInput, "30");
+      // Should show step 1 of 2 (schedule selection + team selection if needed)
+      expect(screen.getByText(/Step 1 of/i)).toBeInTheDocument();
+    });
 
-      // Save the update
-      await user.click(screen.getByRole("button", { name: /Save & Complete/i }));
+    it("should show Cancel button in change-schedule mode", async () => {
+      const user = userEvent.setup();
+      const onHide = vi.fn();
+
+      renderWithProviders(
+        <WelcomeWizard {...defaultProps} mode="change-schedule" onHide={onHide} />,
+      );
+
+      // Should show Cancel button instead of Skip
+      const cancelButton = screen.getByRole("button", { name: /Cancel/i });
+      expect(cancelButton).toBeInTheDocument();
+
+      // Cancel should call onHide
+      await user.click(cancelButton);
+      expect(onHide).toHaveBeenCalledTimes(1);
+    });
+
+    it("should show Save Schedule button when selecting schedule without team selection in change-schedule mode", async () => {
+      const user = userEvent.setup();
+      const onScheduleSelect = vi.fn();
+
+      renderWithProviders(
+        <WelcomeWizard
+          {...defaultProps}
+          mode="change-schedule"
+          onScheduleSelect={onScheduleSelect}
+        />,
+      );
+
+      // Wait for schedule selection to render
+      await waitFor(() => {
+        expect(screen.getByText(/Which roster matches your team\?/i)).toBeInTheDocument();
+      });
+
+      // Select a schedule that doesn't require team selection (9-5)
+      await user.click(screen.getByRole("button", { name: /9-5/i }));
+
+      // Wait for button to update and show "Save Schedule"
+      await waitFor(() => {
+        const saveButton = screen.getByRole("button", { name: /Save Schedule/i });
+        expect(saveButton).toBeInTheDocument();
+      });
+    });
+
+    it("should navigate to team selection when schedule requires teams in change-schedule mode", async () => {
+      const user = userEvent.setup();
+      const onScheduleSelect = vi.fn();
+      const onTeamSelect = vi.fn();
+      const onHide = vi.fn();
+
+      renderWithProviders(
+        <WelcomeWizard
+          {...defaultProps}
+          mode="change-schedule"
+          onScheduleSelect={onScheduleSelect}
+          onTeamSelect={onTeamSelect}
+          onHide={onHide}
+        />,
+      );
+
+      // Wait for schedule selection to render
+      await waitFor(() => {
+        expect(screen.getByText(/Which roster matches your team\?/i)).toBeInTheDocument();
+      });
+
+      // Select a schedule that requires team selection (5-shift)
+      await user.click(screen.getByRole("button", { name: /5-shift/i }));
+
+      // Should show Continue button (not Save Schedule) because team selection is needed
+      await waitFor(() => {
+        const continueButton = screen.getByRole("button", { name: /Continue/i });
+        expect(continueButton).toBeInTheDocument();
+      });
+
+      // Click Continue to move to team selection
+      await user.click(screen.getByRole("button", { name: /Continue/i }));
+
+      // Should move to team selection
+      await waitFor(() => {
+        expect(screen.getByText(/Choose your team/i)).toBeInTheDocument();
+      });
+
+      // Select a team - this should call onTeamSelect and onHide
+      await user.click(screen.getByLabelText(/Select Team 3/i));
+
+      // Verify onTeamSelect was called with team 3
+      await waitFor(() => {
+        expect(onTeamSelect).toHaveBeenCalledWith(3);
+      });
+
+      // Verify onHide was called (wizard closes immediately in change-schedule mode)
+      expect(onHide).toHaveBeenCalled();
+    });
+  });
+
+  describe("Schedule change integration tests", () => {
+    beforeEach(() => {
+      localStorage.clear();
+    });
+
+    afterEach(() => {
+      localStorage.clear();
+    });
+
+    it("should open Change Schedule wizard when Change Schedule button is clicked", async () => {
+      const user = userEvent.setup();
+      render(<App />);
+
+      // Complete initial onboarding by manually navigating through wizard
+      await findModalTitle(/Welcome to Worktime/i);
+
+      // Step 1: Welcome -> Features
+      const getStartedButton = screen.getByRole("button", { name: /Let's Get Started/i });
+      await user.click(getStartedButton);
+
+      // Step 2: Features -> Schedule Selection
+      await waitFor(() => {
+        expect(screen.getByText(/What can Worktime do\?/i)).toBeInTheDocument();
+      });
+      const chooseScheduleButton = screen.getByRole("button", { name: /Choose a Schedule/i });
+      await user.click(chooseScheduleButton);
+
+      // Step 3: Schedule Selection -> Team Selection
+      await waitFor(() => {
+        expect(screen.getByText(/Which roster matches your team\?/i)).toBeInTheDocument();
+      });
+      await user.click(screen.getByRole("button", { name: /5-shift/i }));
+      await user.click(screen.getByRole("button", { name: /Continue/i }));
+
+      // Step 4: Team Selection -> Vacation Allowance
+      await waitFor(() => {
+        expect(screen.getByText(/Choose your team/i)).toBeInTheDocument();
+      });
+      await user.click(screen.getByLabelText(/Select Team 1/i));
+
+      // Step 5: Vacation Allowance -> Complete
+      await waitFor(() => {
+        expect(screen.getByText(/Set Up Vacation Tracking/i)).toBeInTheDocument();
+      });
+      await user.click(screen.getByRole("button", { name: /Complete/i }));
 
       // Wait for wizard to close
       await waitFor(() =>
         expect(screen.queryByText(/Set Up Vacation Tracking/i)).not.toBeInTheDocument(),
       );
 
-      // Verify vacation allowance was updated in change-team mode
-      saved = JSON.parse(localStorage.getItem("worktime_user_state") || "{}");
-      expect(saved.settings?.vacationAllowance?.amount).toBe(30);
-      expect(saved.settings?.vacationAllowance?.unit).toBe("days");
-      expect(saved.myTeam).toBe(2); // Team was changed
+      // Open Settings panel
+      const settingsButton = screen.getByRole("button", { name: /Settings/i });
+      await user.click(settingsButton);
 
-      // Verify success toast was shown
+      // Click Change Schedule button
       await waitFor(() => {
-        expect(screen.getByText(/Vacation allowance updated successfully/i)).toBeInTheDocument();
+        const changeScheduleButton = screen.getByRole("button", { name: /Change Schedule/i });
+        expect(changeScheduleButton).toBeInTheDocument();
       });
+      await user.click(screen.getByRole("button", { name: /Change Schedule/i }));
+
+      // Should open wizard in change-schedule mode
+      await waitFor(() => {
+        expect(screen.getByText(/Which roster matches your team\?/i)).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe("Error handling", () => {
+    it("should not crash when onScheduleSelect is provided", async () => {
+      const user = userEvent.setup();
+      const onScheduleSelectMock = vi.fn();
+
+      // Test that the component works with onScheduleSelect prop
+      renderWithProviders(
+        <WelcomeWizard
+          {...defaultProps}
+          onScheduleSelect={onScheduleSelectMock}
+          mode="change-schedule"
+        />,
+      );
+
+      // Navigate to schedule selection
+      await waitFor(() => {
+        expect(screen.getByText(/Which roster matches your team\?/i)).toBeInTheDocument();
+      });
+
+      // Select a schedule - should not crash
+      const fiveShiftButton = screen.getByRole("button", { name: /5-shift/i });
+      await user.click(fiveShiftButton);
+
+      // Component should remain functional
+      expect(fiveShiftButton).toBeInTheDocument();
+    });
+
+    it("should not allow selection of disabled/unavailable schedules", async () => {
+      const user = userEvent.setup();
+      const onScheduleSelectMock = vi.fn();
+
+      renderWithProviders(
+        <WelcomeWizard
+          {...defaultProps}
+          onScheduleSelect={onScheduleSelectMock}
+          mode="change-schedule"
+        />,
+      );
+
+      // Navigate to schedule selection
+      await waitFor(() => {
+        expect(screen.getByText(/Which roster matches your team\?/i)).toBeInTheDocument();
+      });
+
+      // Find disabled schedule buttons (2-shift and weekend-shift are marked as unavailable)
+      const twoShiftButton = screen.getByRole("button", { name: /2-shift/i });
+      const weekendShiftButton = screen.getByRole("button", { name: /Weekend shift/i });
+
+      // These buttons should be disabled
+      expect(twoShiftButton).toBeDisabled();
+      expect(weekendShiftButton).toBeDisabled();
+
+      // Attempting to click should not select them
+      await user.click(twoShiftButton);
+      await user.click(weekendShiftButton);
+
+      // Button should remain disabled even if clicked
+      expect(twoShiftButton).toBeDisabled();
+      expect(weekendShiftButton).toBeDisabled();
+    });
+
+    it("should show tooltip on disabled schedule options", async () => {
+      renderWithProviders(<WelcomeWizard {...defaultProps} mode="change-schedule" />);
+
+      // Navigate to schedule selection
+      await waitFor(() => {
+        expect(screen.getByText(/Which roster matches your team\?/i)).toBeInTheDocument();
+      });
+
+      // Find disabled schedule button
+      const twoShiftButton = screen.getByRole("button", { name: /2-shift/i });
+
+      // Should have a title attribute for tooltip
+      expect(twoShiftButton).toHaveAttribute("title", "This schedule option is coming soon");
+    });
+
+    it("should handle schedule selection in onboarding flow", async () => {
+      const user = userEvent.setup();
+
+      renderWithProviders(<WelcomeWizard {...defaultProps} />);
+
+      // Navigate through the wizard
+      const getStartedButton = screen.getByRole("button", {
+        name: /Let's Get Started/i,
+      });
+      await user.click(getStartedButton);
+      await waitForStep(2, 5);
+
+      const chooseScheduleButton = screen.getByRole("button", {
+        name: /Choose a Schedule/i,
+      });
+      await user.click(chooseScheduleButton);
+      await waitForStep(3, 5);
+
+      // Select a valid schedule
+      const fiveShiftButton = screen.getByRole("button", { name: /5-shift/i });
+      await user.click(fiveShiftButton);
+
+      // Verify button is now highlighted/selected
+      expect(fiveShiftButton).toHaveClass("btn-primary");
+
+      // Continue button should be enabled
+      const continueButton = screen.getByRole("button", { name: /Continue/i });
+      expect(continueButton).not.toBeDisabled();
+    });
+
+    it("should not proceed without schedule selection", async () => {
+      const user = userEvent.setup();
+
+      // Clear any pre-selected schedule
+      const emptyUserState = {
+        ...defaultUserState,
+        scheduleOption: null,
+      };
+      window.localStorage.setItem("worktime_user_state", JSON.stringify(emptyUserState));
+
+      // Render without seedScheduleOption() to preserve the null scheduleOption
+      render(
+        <SettingsProvider>
+          <ToastProvider>
+            <WelcomeWizard {...defaultProps} />
+          </ToastProvider>
+        </SettingsProvider>,
+      );
+
+      // Navigate to schedule selection
+      const getStartedButton = screen.getByRole("button", {
+        name: /Let's Get Started/i,
+      });
+      await user.click(getStartedButton);
+      await waitForStep(2, 4); // 4 steps total when no schedule selected (no team selection)
+
+      const chooseScheduleButton = screen.getByRole("button", {
+        name: /Choose a Schedule/i,
+      });
+      await user.click(chooseScheduleButton);
+      await waitForStep(3, 4); // 4 steps total when no schedule selected (no team selection)
+
+      // Without selecting a schedule, the continue button should be disabled
+      const continueButtons = screen.getAllByRole("button", { name: /Continue/i });
+      const continueButton = continueButtons[continueButtons.length - 1];
+
+      // Button should be disabled without explicit schedule selection
+      expect(continueButton).toBeDisabled();
+    });
+
+    it("should not implicitly default to 5-shift when navigating to schedule selection", async () => {
+      const onScheduleSelect = vi.fn();
+      const user = userEvent.setup();
+
+      // Clear any pre-selected schedule
+      const emptyUserState = {
+        ...defaultUserState,
+        scheduleOption: null,
+      };
+      window.localStorage.setItem("worktime_user_state", JSON.stringify(emptyUserState));
+
+      // Render without seedScheduleOption() to preserve the null scheduleOption
+      render(
+        <SettingsProvider>
+          <ToastProvider>
+            <WelcomeWizard {...defaultProps} onScheduleSelect={onScheduleSelect} />
+          </ToastProvider>
+        </SettingsProvider>,
+      );
+
+      // Navigate to schedule selection
+      const getStartedButton = screen.getByRole("button", {
+        name: /Let's Get Started/i,
+      });
+      await user.click(getStartedButton);
+      await waitForStep(2, 4); // 4 steps total when no schedule selected (no team selection)
+
+      const chooseScheduleButton = screen.getByRole("button", {
+        name: /Choose a Schedule/i,
+      });
+      await user.click(chooseScheduleButton);
+      await waitForStep(3, 4); // 4 steps total when no schedule selected (no team selection)
+
+      // Verify onScheduleSelect was not called implicitly
+      expect(onScheduleSelect).not.toHaveBeenCalled();
+
+      // Verify continue button is disabled without explicit selection
+      const continueButtons = screen.getAllByRole("button", { name: /Continue/i });
+      const continueButton = continueButtons[continueButtons.length - 1];
+      expect(continueButton).toBeDisabled();
     });
   });
 });

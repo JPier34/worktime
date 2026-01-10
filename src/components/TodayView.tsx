@@ -6,17 +6,28 @@ import Col from "react-bootstrap/Col";
 import OverlayTrigger from "react-bootstrap/OverlayTrigger";
 import Row from "react-bootstrap/Row";
 import Tooltip from "react-bootstrap/Tooltip";
+import type { Dayjs } from "dayjs";
 import { useEventStore } from "../contexts/EventStoreContext";
 import { useSettings } from "../contexts/SettingsContext";
-import { dayjs, getISOWeekYear2Digit, getLocalizedShiftTime } from "../utils/dateTimeUtils";
+import { getScheduleConfig } from "../utils/scheduleUtils";
+import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
+import { dayjs, getISOWeekYear2Digit } from "../utils/dateTimeUtils";
 import type { ShiftResult } from "../utils/shiftCalculations";
-import { getShiftByCode, isCurrentlyWorking } from "../utils/shiftCalculations";
+import {
+  getShiftDisplay,
+  getFormattedShiftTime,
+  isCurrentlyWorking,
+} from "../utils/shiftCalculations";
 
 interface TodayViewProps {
   todayShifts: ShiftResult[];
   myTeam: number | null; // The user's team from onboarding
+  currentDate: Dayjs;
+  onPreviousDay: () => void;
+  onNextDay: () => void;
   onTodayClick: () => void;
   onTeamClick?: (teamNumber: number) => void;
+  isActive?: boolean;
 }
 
 /**
@@ -36,19 +47,23 @@ function TeamCard({
   shiftResult,
   isMyTeam,
   isCurrentlyActive,
+  hasTeams,
   onTeamClick,
 }: {
   shiftResult: ShiftResult;
   isMyTeam: boolean;
   isCurrentlyActive: boolean;
+  hasTeams: boolean;
   onTeamClick?: (teamNumber: number) => void;
 }) {
-  const { settings } = useSettings();
-  const shiftDetails = getShiftByCode(shiftResult.shift.code);
-  const shiftTimeLabel =
-    shiftDetails.start && shiftDetails.end
-      ? getLocalizedShiftTime(shiftDetails.start, shiftDetails.end, settings.timeFormat)
-      : shiftDetails.hours;
+  const { settings, scheduleOption } = useSettings();
+  // Use shiftResult.shift directly - already contains emoji/className/name/hours
+  const shiftDisplay = getShiftDisplay(shiftResult.shift, scheduleOption);
+  const shiftTimeLabel = getFormattedShiftTime(
+    shiftResult.shift,
+    scheduleOption,
+    settings.timeFormat,
+  );
 
   const cardContent = (
     <>
@@ -58,7 +73,11 @@ function TeamCard({
           <Badge
             bg="success"
             className="live-badge"
-            aria-label={`Team ${shiftResult.teamNumber} is currently working`}
+            aria-label={
+              hasTeams
+                ? `Team ${shiftResult.teamNumber} is currently working`
+                : "Schedule is currently working"
+            }
           >
             LIVE
           </Badge>
@@ -69,7 +88,7 @@ function TeamCard({
         style={{ position: "relative", zIndex: 2 }}
       >
         <div className="d-flex align-items-center gap-2">
-          <h6 className="mb-0">Team {shiftResult.teamNumber}</h6>
+          <h6 className="mb-0">{hasTeams ? `Team ${shiftResult.teamNumber}` : "Schedule"}</h6>
           {onTeamClick && (
             <i className="bi bi-chevron-right text-muted small" aria-hidden="true"></i>
           )}
@@ -78,31 +97,25 @@ function TeamCard({
           placement="top"
           overlay={
             <Tooltip id={`shift-tooltip-${shiftResult.teamNumber}`}>
-              <strong>Shift Code: {shiftResult.shift.code}</strong>
+              <strong>Shift Code: {shiftDisplay.displayCode}</strong>
               <br />
               <>
-                {shiftDetails.emoji} <em>{shiftDetails.name}</em>
+                {shiftResult.shift.emoji} <em>{shiftDisplay.displayName}</em>
                 <br />
                 {shiftTimeLabel}
               </>
             </Tooltip>
           }
         >
-          <Badge className={`shift-code cursor-help ${shiftDetails.className}`}>
-            {shiftResult.shift.code}
+          <Badge className={`shift-code cursor-help ${shiftResult.shift.className}`}>
+            {shiftDisplay.displayCode}
           </Badge>
         </OverlayTrigger>
       </div>
       <div className="text-muted small">
-        {shiftResult.shift.name}
+        {shiftDisplay.displayName}
         <br />
-        {shiftResult.shift.isWorking
-          ? getLocalizedShiftTime(
-              shiftResult.shift.start,
-              shiftResult.shift.end,
-              settings.timeFormat,
-            )
-          : "Not working today"}
+        {shiftResult.shift.isWorking ? shiftTimeLabel : "Not working today"}
       </div>
       <div className="text-muted small mt-1">
         <OverlayTrigger
@@ -115,7 +128,7 @@ function TeamCard({
               <br />
               <em>{shiftResult.code}</em> = ISO Year {getISOWeekYear2Digit(shiftResult.date)}, ISO
               Week {shiftResult.date.isoWeek()}, {shiftResult.date.format("dddd")},{" "}
-              {shiftResult.shift.name}
+              {shiftDisplay.displayName}
             </Tooltip>
           }
         >
@@ -130,7 +143,13 @@ function TeamCard({
       <Card
         className={`team-card-interactive w-100${isMyTeam ? " my-team" : ""}`}
         onClick={() => onTeamClick(shiftResult.teamNumber)}
-        title={`View details for Team ${shiftResult.teamNumber}`}
+        role="button"
+        aria-label={
+          hasTeams ? `View details for Team ${shiftResult.teamNumber}` : "View schedule details"
+        }
+        title={
+          hasTeams ? `View details for Team ${shiftResult.teamNumber}` : "View schedule details"
+        }
         style={{ cursor: "pointer" }}
         tabIndex={0}
         onKeyDown={(e) => {
@@ -153,16 +172,41 @@ function TeamCard({
 }
 
 /**
- * Render a card listing all teams scheduled for today, with an optional Today action and per-team interactivity.
+ * Render a card listing all teams scheduled for the given date, with date navigation and optional per-team interactivity.
  *
- * @param todayShifts - Array of shift results for today; each item represents a team's scheduled shift and metadata.
+ * @param todayShifts - Array of shift results for the current date; each item represents a team's scheduled shift and metadata.
  * @param myTeam - Current user's team number, or `null`; used to visually highlight the user's team card.
+ * @param currentDate - The date being displayed
+ * @param onPreviousDay - Handler invoked when the "Previous" button is pressed
+ * @param onNextDay - Handler invoked when the "Next" button is pressed
  * @param onTodayClick - Handler invoked when the "Today" button is pressed.
  * @param onTeamClick - Optional handler invoked with a team number when a team card is activated (click or keyboard).
  * @returns A React element representing the Today card containing a responsive grid of team cards and any time-off alerts.
  */
-export function TodayView({ todayShifts, myTeam, onTodayClick, onTeamClick }: TodayViewProps) {
+export function TodayView({
+  todayShifts,
+  myTeam,
+  currentDate,
+  onPreviousDay,
+  onNextDay,
+  onTodayClick,
+  onTeamClick,
+  isActive = true,
+}: TodayViewProps) {
   const { getEventsInRange } = useEventStore();
+  const { scheduleOption } = useSettings();
+  const hasTeams = getScheduleConfig(scheduleOption).showsTeamSelection ?? true;
+
+  // Keyboard shortcuts (only active when this tab is visible)
+  useKeyboardShortcuts(
+    isActive
+      ? {
+          onToday: onTodayClick,
+          onPrevious: onPreviousDay,
+          onNext: onNextDay,
+        }
+      : {},
+  );
 
   const isCurrentlyActive = (shiftResult: ShiftResult) => {
     if (!shiftResult.shift.isWorking) return false;
@@ -170,20 +214,61 @@ export function TodayView({ todayShifts, myTeam, onTodayClick, onTeamClick }: To
     return isCurrentlyWorking(shiftResult.shift, shiftResult.date, now);
   };
 
-  // Get events for today
+  // Get events for the current date
   const today = dayjs();
-  const todayStart = today.toDate();
-  const todayEnd = today.toDate();
+  const displayDate = currentDate;
+  const isToday = displayDate.isSame(today, "day");
+  const todayStart = displayDate.toDate();
+  const todayEnd = displayDate.toDate();
   const todayEvents = getEventsInRange(todayStart, todayEnd);
 
   return (
     <Card>
-      <Card.Header className="d-flex justify-content-between align-items-center">
-        <h6 className="mb-0">👥 All Teams Today</h6>
-        <Button variant="outline-primary" size="sm" onClick={onTodayClick}>
-          <i className="bi bi-calendar-check me-1" aria-hidden="true"></i>
-          Today
-        </Button>
+      <Card.Header>
+        <div className="d-flex justify-content-between align-items-center mb-2">
+          <h6 className="mb-0">{hasTeams ? "👥 All Teams" : "📅 Schedule"}</h6>
+          <div className="d-flex gap-2">
+            <Button
+              variant="outline-secondary"
+              size="sm"
+              onClick={onPreviousDay}
+              aria-label="Go to previous day"
+            >
+              <i className="bi bi-chevron-left" aria-hidden="true"></i>
+            </Button>
+            <Button
+              variant={isToday ? "primary" : "outline-primary"}
+              size="sm"
+              onClick={onTodayClick}
+              disabled={isToday}
+              aria-label="Go to today"
+            >
+              <i className="bi bi-calendar-check me-1" aria-hidden="true"></i>
+              Today
+            </Button>
+            <Button
+              variant="outline-secondary"
+              size="sm"
+              onClick={onNextDay}
+              aria-label="Go to next day"
+            >
+              <i className="bi bi-chevron-right" aria-hidden="true"></i>
+            </Button>
+          </div>
+        </div>
+        <div className="d-flex justify-content-between align-items-center gap-3">
+          <div className="text-muted small">
+            {displayDate.format("dddd, MMMM D, YYYY")}
+            {isToday && (
+              <Badge bg="success" className="ms-2">
+                Today
+              </Badge>
+            )}
+          </div>
+          <div className="small text-muted text-end" style={{ minWidth: "180px" }}>
+            ⌨️ Keyboard: ← → arrows, Ctrl+H (today)
+          </div>
+        </div>
       </Card.Header>
       <Card.Body>
         {todayEvents.length > 0 && (
@@ -204,6 +289,7 @@ export function TodayView({ todayShifts, myTeam, onTodayClick, onTeamClick }: To
                 shiftResult={shiftResult}
                 isMyTeam={myTeam === shiftResult.teamNumber}
                 isCurrentlyActive={isCurrentlyActive(shiftResult)}
+                hasTeams={hasTeams}
                 onTeamClick={onTeamClick}
               />
             </Col>
