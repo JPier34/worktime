@@ -18,7 +18,7 @@ const defaultProps = {
 const defaultUserState = {
   hasCompletedOnboarding: false,
   myTeam: null,
-  scheduleOption: "5-shift",
+  scheduleType: "5-shift",
   settings: {
     timeFormat: "24h",
     theme: "auto",
@@ -527,11 +527,11 @@ describe("WelcomeWizard", () => {
       expect(screen.getByText(/Step 1 of 5/i)).toBeInTheDocument();
 
       // Navigate to features step
-      await user.click(screen.getByText("Let's Get Started!"));
+      await user.click(screen.getByRole("button", { name: /Let's Get Started/i }));
       expect(screen.getByText(/Step 2 of 5/i)).toBeInTheDocument();
 
       // Navigate to schedule selection step
-      await user.click(screen.getByText(/Choose a Schedule/i));
+      await user.click(screen.getByRole("button", { name: /Choose a Schedule/i }));
       expect(screen.getByText(/Step 3 of 5/i)).toBeInTheDocument();
 
       // Choose 5-shift to reveal team selection
@@ -924,11 +924,11 @@ describe("WelcomeWizard", () => {
       // Clear any pre-selected schedule
       const emptyUserState = {
         ...defaultUserState,
-        scheduleOption: null,
+        scheduleType: null,
       };
       window.localStorage.setItem("worktime_user_state", JSON.stringify(emptyUserState));
 
-      // Render without seedScheduleOption() to preserve the null scheduleOption
+      // Render without seedScheduleOption() to preserve the null scheduleType
       render(
         <SettingsProvider>
           <ToastProvider>
@@ -965,11 +965,11 @@ describe("WelcomeWizard", () => {
       // Clear any pre-selected schedule
       const emptyUserState = {
         ...defaultUserState,
-        scheduleOption: null,
+        scheduleType: null,
       };
       window.localStorage.setItem("worktime_user_state", JSON.stringify(emptyUserState));
 
-      // Render without seedScheduleOption() to preserve the null scheduleOption
+      // Render without seedScheduleOption() to preserve the null scheduleType
       render(
         <SettingsProvider>
           <ToastProvider>
@@ -998,6 +998,99 @@ describe("WelcomeWizard", () => {
       const continueButtons = screen.getAllByRole("button", { name: /Continue/i });
       const continueButton = continueButtons[continueButtons.length - 1];
       expect(continueButton).toBeDisabled();
+    });
+  });
+
+  describe("Onboarding validation tests", () => {
+    let originalLocalStorage: Storage;
+    let testStorage: Record<string, string>;
+
+    beforeEach(() => {
+      vi.clearAllMocks();
+      testStorage = {};
+      originalLocalStorage = window.localStorage;
+      Object.defineProperty(window, "localStorage", {
+        value: {
+          clear: vi.fn(() => {
+            testStorage = {};
+          }),
+          getItem: vi.fn((key: string) => {
+            return testStorage[key] || null;
+          }),
+          setItem: vi.fn((key: string, value: string) => {
+            testStorage[key] = value;
+          }),
+          removeItem: vi.fn((key: string) => {
+            delete testStorage[key];
+          }),
+          length: 0,
+          key: vi.fn(),
+        },
+        writable: true,
+      });
+    });
+
+    afterEach(() => {
+      Object.defineProperty(window, "localStorage", {
+        value: originalLocalStorage,
+        writable: true,
+      });
+      window.localStorage.clear?.();
+      vi.clearAllMocks();
+      document.body.className = "";
+      document.documentElement.removeAttribute("data-bs-theme");
+    });
+
+    it("should disable the continue button when no schedule is selected", async () => {
+      // Start with no schedule selected
+      const userStateWithoutSchedule = {
+        ...defaultUserState,
+        scheduleType: null,
+      };
+      window.localStorage.setItem(
+        "worktime_user_state",
+        JSON.stringify(userStateWithoutSchedule),
+      );
+
+      const user = userEvent.setup();
+      render(<App />);
+
+      // Wait for wizard to appear
+      await findModalTitle(/Welcome to Worktime/i);
+
+      // Navigate to features step
+      await user.click(screen.getByRole("button", { name: /Let's Get Started/i }));
+      await waitForStep(2, 4); // 4 steps when no schedule (no team selection)
+
+      // Navigate to schedule selection step
+      await user.click(screen.getByRole("button", { name: /Choose a Schedule/i }));
+      await waitForStep(3, 4);
+
+      // Try to continue without selecting a schedule
+      const continueButtons = screen.getAllByRole("button", { name: /Continue/i });
+      const continueButton = continueButtons[continueButtons.length - 1];
+
+      // Button should be disabled if no schedule is selected
+      expect(continueButton).toBeDisabled();
+    });
+
+    it("should render the wizard when scheduleType is null", async () => {
+      const userStateWithoutSchedule = {
+        ...defaultUserState,
+        scheduleType: null,
+      };
+      window.localStorage.setItem(
+        "worktime_user_state",
+        JSON.stringify(userStateWithoutSchedule),
+      );
+
+      render(<App />);
+
+      // Wait for wizard to appear
+      await findModalTitle(/Welcome to Worktime/i);
+
+      const modalHeading = await screen.findByRole("heading", { name: /Welcome to Worktime/i });
+      expect(modalHeading).toBeInTheDocument();
     });
   });
 });
