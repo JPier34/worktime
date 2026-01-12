@@ -40,7 +40,7 @@ function AppContent() {
     updateVacationAllowance,
     settings,
   } = useSettings();
-  const { currentDate, setCurrentDate, todayShifts } = useShiftCalculation();
+  const { currentDate, setCurrentDate } = useShiftCalculation();
   const pendingDeepLinkRef = useRef<{ team?: string; date?: string }>({});
 
   // Handle URL parameters for deep linking
@@ -195,7 +195,7 @@ function AppContent() {
         return;
       }
       const selectedScheduleConfig = SCHEDULE_OPTIONS.find(
-        (option) => option.value === scheduleType
+        (option) => option.value === scheduleType,
       );
       if (!selectedScheduleConfig) {
         // Defensive validation: Despite TypeScript guarantees that scheduleType is a valid
@@ -204,7 +204,7 @@ function AppContent() {
         // onboarding with inconsistent schedule data.
         showError(
           "An internal configuration error occurred: the selected schedule could not be found. Please try again or contact support.",
-          "⚠️"
+          "⚠️",
         );
         return;
       }
@@ -254,7 +254,6 @@ function AppContent() {
               myTeam={myTeam}
               currentDate={currentDate}
               setCurrentDate={setCurrentDate}
-              todayShifts={todayShifts}
               activeTab={activeTab}
               onTabChange={setActiveTab}
             />

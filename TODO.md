@@ -14,29 +14,6 @@ This document serves as a general to-do list and development roadmap for Worktim
 
 Critical features and improvements that significantly impact user experience.
 
-#### 0. Worktime Integration Plan (Phase 1–3 Foundations)
-
-Track the Phase 1–3 extraction and integration work from `WORKTIME_PLAN.md` so the roadmap reflects the shared-library and unified event-store goals beyond the v4.0 in-app integrations.
-
-- **1. Extract `.hday` parser/serializer into shared lib**
-  - **Current State**: Parser/serializer already lives in Worktime (`src/lib/hday/parser.ts`)
-  - **Implementation**: Move parsing + serialization into a shared package/module for reuse across Worktime/NextShift
-  - **Status**: 🔲 Planned (shared-lib extraction)
-- **2. Extract shift rotation engine into shared lib**
-  - **Current State**: Rotation logic lives in `src/utils/shiftCalculations.ts`
-  - **Implementation**: Isolate shift cycle calculation into a reusable library module
-  - **Status**: 🔲 Planned
-- **3. Unified event store (computed shifts + `.hday` events)**
-  - **Current State**: `src/contexts/EventStoreContext.tsx` manages `.hday` time-off events only
-  - **Notes**: Enables HdayPlanner gap items 4.2 (Vacation Statistics), 4.3 (Raw .hday Editor), and 4.4 (Utility Functions) by standardizing event handling
-  - **Implementation**: Merge computed shift events with imported time-off events in a single in-memory store
-  - **Status**: 🔲 Planned (expansion beyond current time-off store)
-- **4. Overlay semantics on schedule/transfer views**
-  - **Source**: N/A (new definition)
-  - **Current State**: Schedule view has time-off overlay dots; Transfer view has none yet
-  - **Implementation**: Define merge/priority rules for how time-off overlays appear on Schedule + Transfer views
-  - **Status**: 🔲 Planned (formalize semantics + add transfer overlays)
-
 #### 1. Export Schedule Feature
 
 - **Component**: Calendar export functionality
@@ -47,7 +24,7 @@ Track the Phase 1–3 extraction and integration work from `WORKTIME_PLAN.md` so
 - **Implementation**: Add calendar generation utility and activate export buttons
 - **Files to Modify**:
   - `src/components/SettingsPanel.tsx` - Remove "Coming Soon" badge and enable button
-  - `src/components/TeamDetailModal.tsx` - Enable export button
+  - `src/components/ScheduleDetailModal.tsx` - Enable export button
   - `src/utils/exportCalendar.ts` – Add calendar export utility
 - **Estimated Effort**: 3–4 hours
 - **Status**: 🔲 Planned
@@ -140,22 +117,41 @@ Track the Phase 1–3 extraction and integration work from `WORKTIME_PLAN.md` so
 
 Features that enhance functionality with moderate development effort.
 
-#### 4. Reusable TeamSelector Component
+#### 4. Cross-Schedule Transfer View Enhancement
+
+- **Component**: TransferView with cross-schedule coordination
+- **Use Cases**:
+  - View when user's schedule overlaps with teams on different schedules
+  - 9-5 user can see when their working hours overlap with 5-shift teams
+  - Cross-schedule coordination and handover visibility
+  - Enables meeting scheduling across different roster patterns
+- **Implementation**:
+  - Add schedule selector to TransferView (similar to ScheduleView/TodayView)
+  - Calculate overlapping work periods between different schedules
+  - Define what "transfer" means across different schedule types
+  - Show overlap hours/periods instead of traditional handover moments
+- **Files to Modify**:
+  - `src/components/TransferView.tsx` - Add cross-schedule viewing and overlap calculation
+  - `src/utils/shiftCalculations.ts` - Add cross-schedule overlap detection utilities
+- **Estimated Effort**: 4-5 hours
+- **Status**: 🔲 Planned (enables cross-roster coordination)
+
+#### 5. Reusable TeamSelector Component
 
 - **Component**: Extract common team selection logic
 - **Use Cases**:
-  - Reduce code duplication across TransferView, TeamDetailModal, etc.
+  - Reduce code duplication across TransferView, ScheduleDetailModal, etc.
   - Consistent team selection UI/UX
   - Easier maintenance and updates
 - **Implementation**: Create `components/common/TeamSelector.tsx` with standardized props
 - **Files to Modify**:
   - `src/components/TransferView.tsx` - Replace dropdown with TeamSelector
-  - `src/components/TeamDetailModal.tsx` - Use common component
+  - `src/components/ScheduleDetailModal.tsx` - Use common component
   - Create `src/components/common/TeamSelector.tsx`
 - **Estimated Effort**: 2–3 hours
 - **Status**: 🔲 Planned
 
-#### 5. Enhanced List Groups
+#### 6. Enhanced List Groups
 
 - **Component**: `react-bootstrap/ListGroup`
 - **Use Cases**:
@@ -166,18 +162,18 @@ Features that enhance functionality with moderate development effort.
 - **Estimated Effort**: 2–3 hours
 - **Status**: 🔲 Future
 
-#### 6. TeamDetailModal Enhancement
+#### 7. ScheduleDetailModal Enhancement
 
-- **Component**: Improve existing team detail modal
+- **Component**: Improve existing schedule detail modal
 - **Use Cases**:
   - Enable export functionality in modal
-  - Enhanced 7-day schedule view
-  - Better team information display
+  - Enhanced schedule view for all schedule types
+  - Better schedule information display
 - **Implementation**: Activate disabled features and improve UX
 - **Estimated Effort**: 1–2 hours
 - **Status**: 🔲 Future
 
-#### 7. Enhanced Error Boundaries
+#### 8. Enhanced Error Boundaries
 
 - **Component**: More granular error handling
 - **Use Cases**:
@@ -188,48 +184,28 @@ Features that enhance functionality with moderate development effort.
 - **Estimated Effort**: 2–3 hours
 - **Status**: 🔲 Future
 
-#### 8. CurrentStatus Component Refactoring ⭐️
+#### 9. Time-Off Visual Integration
 
-- **Component**: Simplify complex conditional rendering in CurrentStatus
-- **Priority**: Elevated due to code review feedback
-- **Code Review Feedback**: "This component has grown quite complex with the introduction of the generic view for when no team is selected. The conditional rendering logic, especially within the Your Team Status and Your Next Shift cards, makes it a bit hard to follow." - _Gemini Code Assistant_
+- **Component**: Comprehensive time-off event visualization across all views
 - **Use Cases**:
-  - Improved code readability and maintainability
-  - Easier testing of individual status display logic
-  - Better separation of concerns
-  - Cleaner component architecture with single responsibility
-- **Recommended Implementation**:
-  - Extract into `PersonalizedStatus` and `GenericStatus` components
-  - Make CurrentStatus a simple router component that decides which view to render
-  - Example structure:
-    ```tsx
-    export function CurrentStatus({ myTeam, currentDate, todayShifts, onTodayClick }) {
-      return myTeam ? (
-        <PersonalizedStatus myTeam={myTeam} currentDate={currentDate} todayShifts={todayShifts} />
-      ) : (
-        <GenericStatus currentDate={currentDate} todayShifts={todayShifts} onTodayClick={onTodayClick} />
-      );
-    }
-    ```
-- **Files to Modify**:
-  - `src/components/CurrentStatus.tsx` - Simplify to router component
-  - Create `src/components/status/PersonalizedStatus.tsx` - Handles user's team view
-  - Create `src/components/status/GenericStatus.tsx` - Handles no-team-selected view
-  - Update tests to cover new component structure
-- **Estimated Effort**: 2–3 hours
-- **Status**: 🔲 Planned (High Priority)
-
-#### 9. Time-Off Calendar Visual Enhancements
-
-- **Component**: TimeOffView calendar display improvements
-- **Use Cases**:
-  - Color-coded calendar events matching .hday flag colors
-  - Auto-load and highlight current month
-  - Visual indicator for today's date
-  - Weekly recurring event indicators (d1-d7) on appropriate weekdays
-  - Auto-sort events by date in event table
-- **Implementation**: Enhance TimeOffView calendar rendering
-- **Estimated Effort**: 3–4 hours
+  - **TimeOffView Enhancements**:
+    - Color-coded calendar events matching .hday flag colors
+    - Auto-load and highlight current month
+    - Visual indicator for today's date
+    - Weekly recurring event indicators (d1-d7) on appropriate weekdays
+    - Auto-sort events by date in event table
+  - **Schedule & Transfer View Overlays**:
+    - Time-off overlay indicators (dots/badges) on ScheduleView grid cells
+    - Time-off overlay indicators on TransferView
+    - At-a-glance visibility of vacation/business trips on schedule grid
+    - Visual hierarchy showing both shifts and time-off events
+    - Define merge/priority rules for overlapping indicators
+- **Implementation**:
+  - Enhance TimeOffView calendar rendering
+  - Add event indicator overlays to ScheduleView grid cells
+  - Add event indicators to TransferView
+  - Define and implement overlay semantics (priority, color, positioning)
+- **Estimated Effort**: 5–6 hours
 - **Status**: 🔲 Future
 
 #### 10. Time-Off Bulk Operations
@@ -361,13 +337,117 @@ Advanced features for future development phases.
 - **Estimated Effort**: 2–3 hours
 - **Status**: 🔲 Future (Low Priority)
 
+#### 19. Backend with Shared .hday Files (Team Collaboration)
+
+- **Component**: Backend API + shared network storage for multi-user .hday time-off collaboration
+- **Current State**: Offline-first localStorage, single-user only
+- **Scope**: Backend manages **only .hday time-off events**, not shifts (shifts remain client-computed from roster config)
+- **Use Cases**:
+  - **Team Visibility**: Everyone sees team members' time-off events
+  - **Shared Schedule**: Central source of truth for team availability
+  - **Real-Time Sync**: Updates from other users appear immediately
+  - **Cross-Team Coordination**: "Who's available for Friday meeting?"
+  - **Conflict Resolution**: Handle simultaneous edits gracefully
+  - **Manager Workflows**: Approval process for vacation requests
+- **Architecture Options**:
+  - **Option A: UNC Path (Windows Network Share)**
+    - Backend reads/writes `\\server\share\team1_timeoff.hday`
+    - Corporate infrastructure, Windows-specific
+    - Simple file I/O, no database needed
+  - **Option B: Cloud Storage (Firebase/Supabase)**
+    - Cross-platform, no corporate infrastructure needed
+    - Built-in real-time sync and auth
+    - Easier development, hosted solution
+  - **Option C: Custom Backend + Database**
+    - Full control, can use PostgreSQL/MongoDB
+    - Most flexible for custom workflows
+    - Most development effort
+- **Technical Components**:
+  1. **REST API** (Phase 1 - Basic CRUD)
+     ```http
+     GET  /api/teams/:teamId/events?start=X&end=Y
+     POST /api/teams/:teamId/events
+     PUT  /api/teams/:teamId/events/:id
+     DEL  /api/teams/:teamId/events/:id
+     ```
+  2. **WebSocket** (Phase 2 - Real-Time)
+     ```typescript
+     socket.on('events:updated', ({ teamId, events }) => {
+       unifiedStore.updateTeamEvents(teamId, events);
+     });
+     ```
+  3. **Authentication** (Phase 3 - Permissions)
+     - Which teams can user view/edit?
+     - Role-based access (member, manager, admin)
+     - Network auth integration (AD/LDAP) or OAuth
+  4. **File Format Extension** (User Attribution)
+
+     ```text
+     # Option A: Comments (backward compatible)
+     2025/01/15-2025/01/20 # John's vacation
+
+     # Option B: Extended format (breaking change)
+     2025/01/15-2025/01/20 @john # John's vacation
+
+     # Option C: Separate files per user
+     \\server\share\team1\john.hday
+     ```
+
+- **Migration Path**:
+  - **Phase 1**: Backend + manual sync (keep localStorage, add "Sync to team" button)
+  - **Phase 2**: Real-time sync (WebSocket, auto-sync, read-only team events)
+  - **Phase 3**: Multi-user editing (write access, conflict resolution)
+  - **Phase 4**: Collaboration features (conflict UI, approval workflows, "who's editing")
+- **Frontend Architecture Options**:
+  - **Option A: Extend EventStoreContext** (simpler, recommended)
+    - Add `syncWithBackend()` and `subscribeToUpdates()` methods to existing EventStoreContext
+    - Shifts remain separate (computed on-demand as today)
+    - Components use both `useEventStore()` and shift calculations (minimal changes)
+  - **Option B: Unified Event Store** (optional convenience layer)
+    - Create wrapper merging shifts + time-off in single API
+    - One call to get all events: `getEventsForDate(date, team)`
+    - More abstraction, but components still need to differentiate types in UI
+    - Additional 6-8 hours of effort, questionable benefit
+- **Implementation Requirements**:
+  - Backend: Node.js/Express or Python/FastAPI
+  - File watching: chokidar (Node) or watchdog (Python)
+  - WebSocket: Socket.io or native WebSocket API
+  - Frontend: Extend EventStoreContext with backend sync (Option A recommended)
+  - Security: Authentication, authorization, audit logs
+  - Error handling: Offline mode, conflict resolution, retry logic
+- **Files to Create**:
+  - `backend/` - New backend service (separate repo or monorepo)
+  - `backend/api/events.js` - Event CRUD endpoints
+  - `backend/services/fileSync.js` - UNC path file operations
+  - `backend/websocket.js` - Real-time event broadcasting
+  - `src/services/api.ts` - Frontend API client
+  - `src/hooks/useRealtimeSync.ts` - WebSocket hook
+- **Files to Modify**:
+  - `src/contexts/UnifiedEventStore.tsx` - Add backend sync
+  - `src/components/TimeOffView.tsx` - Show who created each event
+  - `src/components/SettingsPanel.tsx` - Add server connection settings
+  - All view components - Handle multi-user events
+- **Challenges**:
+  - Conflict resolution (simultaneous edits)
+  - Offline capability becomes much harder
+  - UNC paths are Windows-specific (not cross-platform)
+  - Security concerns (network share access, auth)
+  - Increased infrastructure requirements
+- **Alternative (Simpler)**:
+  - Manual export to shared folder (no backend)
+  - "Import team file" button for read-only viewing
+  - Gets 80% of benefit with 20% of complexity
+- **Estimated Effort**: 40–60 hours (Major feature, requires backend development)
+- **Status**: 🔲 Aspirational (future team collaboration feature)
+- **Prerequisites**: None (EventStoreContext already exists, just needs backend sync methods)
+
 ## Current To-do Status
 
 ### 🔲 Next Up
 
 1. **Export Schedule Feature** - Calendar export functionality (user-facing)
 2. **Keyboard Shortcuts** - Enhanced navigation and time-off workflows
-3. **CurrentStatus Component Refactoring** ⭐️ - Elevated priority due to code review feedback
+3. **Cross-Schedule Transfer View Enhancement** - Enable cross-roster coordination and overlap detection
 
 ### 📋 Backlog (Code Quality)
 
@@ -376,12 +456,12 @@ Advanced features for future development phases.
 ### 📋 Backlog (Features)
 
 5. **Enhanced List Groups** - Better data organization
-6. **TeamDetailModal Enhancement** - Activate disabled features
+6. **ScheduleDetailModal Enhancement** - Activate disabled features
 7. **Enhanced Error Boundaries** - Better error handling
 
 ### 📋 Backlog (Time-Off Management)
 
-8. **Time-Off Calendar Visual Enhancements** - Color-coded events, auto-load current month, highlight today
+8. **Time-Off Visual Integration** - Calendar enhancements, schedule/transfer overlays, event indicators
 9. **Time-Off Bulk Operations** - Multi-select, copy/duplicate, merge imports
 10. **Calendar Export Formats** - .ics, CSV export for shifts and time-off
 
@@ -393,6 +473,10 @@ Advanced features for future development phases.
 14. **Advanced Accessibility** - Enhanced screen reader support, high contrast mode
 15. **Multi-Roster Pattern Support** - Support 3/4/6-team rosters and custom patterns
 16. **Floating Action Button** - Quick actions overlay
+
+### 📋 Aspirational (Long-Term Vision)
+
+17. **Backend with Shared Files** - Team collaboration with real-time .hday sync (40-60 hours, major undertaking, includes optional unified store)
 
 ## Technical Requirements
 
@@ -519,5 +603,5 @@ Advanced features for future development phases.
 
 ---
 
-**Last Updated**: 2026-01-10
+**Last Updated**: 2026-01-11
 **Next Review**: After v4.5.0 (Export Schedule Feature)

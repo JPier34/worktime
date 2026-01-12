@@ -1,5 +1,5 @@
 import type { Dayjs } from "dayjs";
-import { useId } from "react";
+import { useId, useState } from "react";
 import Badge from "react-bootstrap/Badge";
 import Button from "react-bootstrap/Button";
 import Card from "react-bootstrap/Card";
@@ -7,8 +7,11 @@ import Form from "react-bootstrap/Form";
 import OverlayTrigger from "react-bootstrap/OverlayTrigger";
 import Table from "react-bootstrap/Table";
 import Tooltip from "react-bootstrap/Tooltip";
+import classNames from "classnames";
+import type { ScheduleOption } from "../data/rosters";
+import { SCHEDULE_OPTIONS } from "../data/rosters";
 import { useSettings } from "../contexts/SettingsContext";
-import { getScheduleConfig } from "../utils/scheduleUtils";
+import { getScheduleConfig, isValidScheduleType } from "../utils/scheduleUtils";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
 import {
   dayjs,
@@ -28,6 +31,7 @@ interface ScheduleViewProps {
 /**
  * Render the weekly schedule overview for all teams, with navigation, date jump and keyboard shortcuts.
  *
+ * Works with any schedule type - automatically adapts to single-user or multi-team schedules.
  * Validates the provided `myTeam` and treats out-of-range team numbers as no team selected.
  *
  * @param myTeam - The user's team number from onboarding, or `null` if none is set
@@ -42,10 +46,22 @@ export function ScheduleView({
   isActive = true,
 }: ScheduleViewProps) {
   const datePickerId = useId();
-  const { settings, scheduleType } = useSettings();
+  const scheduleSelectId = useId();
+  const { settings, scheduleType: userScheduleType } = useSettings();
+
+  // Cross-schedule viewing: allow viewing other schedule types
+  const [viewingScheduleType, setViewingScheduleType] = useState<ScheduleOption | null>(
+    userScheduleType,
+  );
+
+  // Use viewing schedule for calculations
+  const scheduleType = viewingScheduleType || userScheduleType;
   const scheduleConfig = getScheduleConfig(scheduleType);
   const teamCount = scheduleConfig.shiftConfig.teamCount ?? 1;
-  const hasTeams = scheduleConfig.showsTeamSelection ?? true;
+  const hasTeams = scheduleConfig.showsTeamSelection;
+
+  // Get available schedules for the selector
+  const availableSchedules = SCHEDULE_OPTIONS.filter((s) => s.isAvailable);
   // Validate and sanitize myTeam prop
   let myTeam = inputMyTeam;
   if (typeof myTeam === "number" && (myTeam < 1 || myTeam > teamCount)) {
@@ -129,6 +145,28 @@ export function ScheduleView({
         </div>
         <div className="d-flex justify-content-between align-items-center gap-3">
           <div className="d-flex align-items-center gap-2">
+            <Form.Label htmlFor={scheduleSelectId} className="mb-0 small text-muted">
+              📋 View schedule:
+            </Form.Label>
+            <Form.Select
+              id={scheduleSelectId}
+              size="sm"
+              value={viewingScheduleType || ""}
+              onChange={(e) => {
+                const value = e.target.value;
+                setViewingScheduleType(isValidScheduleType(value) ? value : null);
+              }}
+              style={{ width: "auto" }}
+            >
+              {availableSchedules.map((schedule) => (
+                <option key={schedule.value} value={schedule.value}>
+                  {schedule.title}
+                  {schedule.value === userScheduleType ? " (Your schedule)" : ""}
+                </option>
+              ))}
+            </Form.Select>
+          </div>
+          <div className="d-flex align-items-center gap-2">
             <Form.Label htmlFor={datePickerId} className="mb-0 small text-muted">
               🎯 Jump to date:
             </Form.Label>
@@ -180,7 +218,7 @@ export function ScheduleView({
                   return (
                     <th
                       key={day.format("YYYY-MM-DD")}
-                      className={`text-center ${isToday ? "today-column" : ""}`}
+                      className={classNames("text-center", isToday && "today-column")}
                       aria-label={`${day.format("dddd, MMM D")}${isToday ? " (today)" : ""}`}
                     >
                       <div className="fw-semibold">{day.format("ddd")}</div>
@@ -230,7 +268,7 @@ export function ScheduleView({
                     return (
                       <td
                         key={day.format("YYYY-MM-DD")}
-                        className={`text-center ${isToday ? "today-column" : ""}`}
+                        className={classNames("text-center", isToday && "today-column")}
                         aria-label={
                           hasTeams
                             ? `Team ${teamNumber} on ${day.format("dddd")}: ${shift.isWorking ? shiftDisplay.displayName : "Off"}`
@@ -260,7 +298,11 @@ export function ScheduleView({
                             }
                           >
                             <Badge
-                              className={`shift-code cursor-help ${getShiftByCode(shift.code).className}`}
+                              className={classNames(
+                                "shift-code",
+                                "cursor-help",
+                                getShiftByCode(shift.code).className,
+                              )}
                             >
                               {shiftDisplay.displayCode}
                             </Badge>

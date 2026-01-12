@@ -1,26 +1,31 @@
+import { useId, useMemo, useState } from "react";
 import Alert from "react-bootstrap/Alert";
 import Badge from "react-bootstrap/Badge";
 import Button from "react-bootstrap/Button";
 import Card from "react-bootstrap/Card";
 import Col from "react-bootstrap/Col";
+import Form from "react-bootstrap/Form";
 import OverlayTrigger from "react-bootstrap/OverlayTrigger";
 import Row from "react-bootstrap/Row";
 import Tooltip from "react-bootstrap/Tooltip";
+import classNames from "classnames";
 import type { Dayjs } from "dayjs";
+import type { ScheduleOption } from "../data/rosters";
+import { SCHEDULE_OPTIONS } from "../data/rosters";
 import { useEventStore } from "../contexts/EventStoreContext";
 import { useSettings } from "../contexts/SettingsContext";
-import { getScheduleConfig } from "../utils/scheduleUtils";
+import { getScheduleConfig, isValidScheduleType } from "../utils/scheduleUtils";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
 import { dayjs, getISOWeekYear2Digit } from "../utils/dateTimeUtils";
 import type { ShiftResult } from "../utils/shiftCalculations";
 import {
+  getAllTeamsShifts,
   getShiftDisplay,
   getFormattedShiftTime,
   isCurrentlyWorking,
 } from "../utils/shiftCalculations";
 
 interface TodayViewProps {
-  todayShifts: ShiftResult[];
   myTeam: number | null; // The user's team from onboarding
   currentDate: Dayjs;
   onPreviousDay: () => void;
@@ -107,7 +112,7 @@ function TeamCard({
             </Tooltip>
           }
         >
-          <Badge className={`shift-code cursor-help ${shiftResult.shift.className}`}>
+          <Badge className={classNames("shift-code", "cursor-help", shiftResult.shift.className)}>
             {shiftDisplay.displayCode}
           </Badge>
         </OverlayTrigger>
@@ -141,7 +146,7 @@ function TeamCard({
   if (onTeamClick) {
     return (
       <Card
-        className={`team-card-interactive w-100${isMyTeam ? " my-team" : ""}`}
+        className={classNames("team-card-interactive", "w-100", isMyTeam && "my-team")}
         onClick={() => onTeamClick(shiftResult.teamNumber)}
         role="button"
         aria-label={
@@ -174,7 +179,9 @@ function TeamCard({
 /**
  * Render a card listing all teams scheduled for the given date, with date navigation and optional per-team interactivity.
  *
- * @param todayShifts - Array of shift results for the current date; each item represents a team's scheduled shift and metadata.
+ * Works with any schedule type - automatically adapts to single-user or multi-team schedules. Shifts are calculated
+ * internally based on the selected viewing schedule, supporting cross-schedule viewing functionality.
+ *
  * @param myTeam - Current user's team number, or `null`; used to visually highlight the user's team card.
  * @param currentDate - The date being displayed
  * @param onPreviousDay - Handler invoked when the "Previous" button is pressed
@@ -184,7 +191,6 @@ function TeamCard({
  * @returns A React element representing the Today card containing a responsive grid of team cards and any time-off alerts.
  */
 export function TodayView({
-  todayShifts,
   myTeam,
   currentDate,
   onPreviousDay,
@@ -193,9 +199,26 @@ export function TodayView({
   onTeamClick,
   isActive = true,
 }: TodayViewProps) {
+  const scheduleSelectId = useId();
   const { getEventsInRange } = useEventStore();
-  const { scheduleType } = useSettings();
-  const hasTeams = getScheduleConfig(scheduleType).showsTeamSelection ?? true;
+  const { scheduleType: userScheduleType } = useSettings();
+
+  // Cross-schedule viewing: allow viewing other schedule types
+  const [viewingScheduleType, setViewingScheduleType] = useState<ScheduleOption | null>(
+    userScheduleType,
+  );
+
+  // Use viewing schedule for calculations
+  const scheduleType = viewingScheduleType || userScheduleType;
+  const hasTeams = getScheduleConfig(scheduleType).showsTeamSelection;
+
+  // Get available schedules for the selector
+  const availableSchedules = SCHEDULE_OPTIONS.filter((s) => s.isAvailable);
+
+  // Calculate shifts for the viewing schedule
+  const todayShifts = useMemo(() => {
+    return getAllTeamsShifts(currentDate, scheduleType);
+  }, [currentDate, scheduleType]);
 
   // Keyboard shortcuts (only active when this tab is visible)
   useKeyboardShortcuts(
@@ -257,6 +280,28 @@ export function TodayView({
           </div>
         </div>
         <div className="d-flex justify-content-between align-items-center gap-3">
+          <div className="d-flex align-items-center gap-2">
+            <Form.Label htmlFor={scheduleSelectId} className="mb-0 small text-muted">
+              📋 View schedule:
+            </Form.Label>
+            <Form.Select
+              id={scheduleSelectId}
+              size="sm"
+              value={viewingScheduleType || ""}
+              onChange={(e) => {
+                const value = e.target.value;
+                setViewingScheduleType(isValidScheduleType(value) ? value : null);
+              }}
+              style={{ width: "auto" }}
+            >
+              {availableSchedules.map((schedule) => (
+                <option key={schedule.value} value={schedule.value}>
+                  {schedule.title}
+                  {schedule.value === userScheduleType ? " (Your schedule)" : ""}
+                </option>
+              ))}
+            </Form.Select>
+          </div>
           <div className="text-muted small">
             {displayDate.format("dddd, MMMM D, YYYY")}
             {isToday && (

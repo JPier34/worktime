@@ -3,6 +3,7 @@ import { useId } from "react";
 import Badge from "react-bootstrap/Badge";
 import OverlayTrigger from "react-bootstrap/OverlayTrigger";
 import Tooltip from "react-bootstrap/Tooltip";
+import classNames from "classnames";
 import { useSettings } from "../contexts/SettingsContext";
 import type { ShiftResult } from "../utils/shiftCalculations";
 import type { ScheduleOption } from "../data/rosters";
@@ -160,16 +161,16 @@ export function ShiftTimeline({ currentWorkingTeam, today }: ShiftTimelineProps)
                 <br />
                 {getShiftDisplay(currentWorkingTeam.shift, scheduleType).displayName}
                 <br />
-                {getFormattedShiftTime(
-                  currentWorkingTeam.shift,
-                  scheduleType,
-                  settings.timeFormat,
-                )}
+                {getFormattedShiftTime(currentWorkingTeam.shift, scheduleType, settings.timeFormat)}
               </Tooltip>
             }
           >
             <Badge
-              className={`${getShiftByCode(currentWorkingTeam.shift.code).className} timeline-current-badge timeline-badge`}
+              className={classNames(
+                getShiftByCode(currentWorkingTeam.shift.code).className,
+                "timeline-current-badge",
+                "timeline-badge",
+              )}
             >
               T{currentWorkingTeam.teamNumber}
             </Badge>

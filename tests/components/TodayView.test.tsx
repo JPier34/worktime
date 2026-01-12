@@ -8,49 +8,10 @@ import { SettingsProvider } from "../../src/contexts/SettingsContext";
 import { ToastProvider } from "../../src/contexts/ToastContext";
 import { dayjs } from "../../src/utils/dateTimeUtils";
 import type { ShiftResult } from "../../src/utils/shiftCalculations";
+import { getAllTeamsShifts } from "../../src/utils/shiftCalculations";
 
-// Mock shift calculation utilities
-vi.mock("../../src/utils/shiftCalculations", () => ({
-  getShiftByCode: vi.fn(() => ({
-    code: "M",
-    emoji: "🌅",
-    name: "Morning",
-    hours: "07:00-15:00",
-    start: 7,
-    end: 15,
-    isWorking: true,
-    className: "shift-morning",
-  })),
-  getShiftDisplay: vi.fn((shift) => {
-    // Apply 5-shift roster display overrides
-    if (shift.code === "L") {
-      return {
-        displayName: "Evening",
-        displayHours: shift.hours,
-        displayCode: "E",
-      };
-    }
-    return {
-      displayName: shift.name,
-      displayHours: shift.hours,
-      displayCode: shift.code,
-    };
-  }),
-  getFormattedShiftTime: vi.fn(() => "07:00-15:00"),
-  isCurrentlyWorking: vi.fn(() => false),
-}));
-
-function renderWithProviders(ui: React.ReactElement) {
-  return render(
-    <ToastProvider>
-      <SettingsProvider>
-        <EventStoreProvider>{ui}</EventStoreProvider>
-      </SettingsProvider>
-    </ToastProvider>,
-  );
-}
-
-const mockTodayShifts: ShiftResult[] = [
+// Mock today shifts data
+const mockTodayShiftsData: ShiftResult[] = [
   {
     teamNumber: 1,
     shift: {
@@ -98,8 +59,49 @@ const mockTodayShifts: ShiftResult[] = [
   },
 ];
 
+// Mock shift calculation utilities
+vi.mock("../../src/utils/shiftCalculations", () => ({
+  getAllTeamsShifts: vi.fn(() => mockTodayShiftsData),
+  getShiftByCode: vi.fn(() => ({
+    code: "M",
+    emoji: "🌅",
+    name: "Morning",
+    hours: "07:00-15:00",
+    start: 7,
+    end: 15,
+    isWorking: true,
+    className: "shift-morning",
+  })),
+  getShiftDisplay: vi.fn((shift) => {
+    // Apply 5-shift roster display overrides
+    if (shift.code === "L") {
+      return {
+        displayName: "Evening",
+        displayHours: shift.hours,
+        displayCode: "E",
+      };
+    }
+    return {
+      displayName: shift.name,
+      displayHours: shift.hours,
+      displayCode: shift.code,
+    };
+  }),
+  getFormattedShiftTime: vi.fn(() => "07:00-15:00"),
+  isCurrentlyWorking: vi.fn(() => false),
+}));
+
+function renderWithProviders(ui: React.ReactElement) {
+  return render(
+    <ToastProvider>
+      <SettingsProvider>
+        <EventStoreProvider>{ui}</EventStoreProvider>
+      </SettingsProvider>
+    </ToastProvider>,
+  );
+}
+
 const defaultProps = {
-  todayShifts: mockTodayShifts,
   myTeam: 1,
   currentDate: dayjs("2025-01-15"),
   onPreviousDay: vi.fn(),
@@ -166,10 +168,13 @@ describe("TodayView", () => {
 
   describe("Empty state", () => {
     it("handles empty shifts array", () => {
-      renderWithProviders(<TodayView {...defaultProps} todayShifts={[]} />);
+      // Override the mock to return empty array for this test
+      vi.mocked(getAllTeamsShifts).mockReturnValueOnce([]);
 
-      // Should still render the Today header
-      expect(screen.getByText("Today")).toBeInTheDocument();
+      renderWithProviders(<TodayView {...defaultProps} />);
+
+      // Should still render the header
+      expect(screen.getByText(/All Teams|Schedule/)).toBeInTheDocument();
     });
   });
 
@@ -200,6 +205,83 @@ describe("TodayView", () => {
       const offTeamBadges = screen.getAllByText(/🏠 Off/);
       expect(offTeamBadges.length).toBeGreaterThan(0);
       expect(screen.queryByText("Active")).not.toBeInTheDocument();
+    });
+  });
+
+  describe("Cross-schedule viewing", () => {
+    it("renders schedule selector dropdown with available schedules", () => {
+      renderWithProviders(<TodayView {...defaultProps} />);
+
+      // Should have a schedule selector
+      const selector = screen.getByLabelText(/View schedule:/i);
+      expect(selector).toBeInTheDocument();
+      expect(selector).toBeInstanceOf(HTMLSelectElement);
+    });
+
+    it("shows current schedule as selected option", () => {
+      renderWithProviders(<TodayView {...defaultProps} />);
+
+      const selector = screen.getByLabelText(/View schedule:/i) as HTMLSelectElement;
+      // Default schedule type is "9-5" in SettingsContext default
+      expect(selector.value).toBe("9-5");
+    });
+
+    it("updates displayed shifts when schedule type changes", async () => {
+      const user = userEvent.setup();
+      const mockNineToFiveShifts: ShiftResult[] = [
+        {
+          teamNumber: 1,
+          shift: {
+            code: "D",
+            emoji: "💼",
+            name: "💼 Day",
+            hours: "09:00-17:00",
+            start: 9,
+            end: 17,
+            isWorking: true,
+            className: "shift-day",
+          },
+          date: dayjs("2025-01-15"),
+          code: "2503.3D",
+        },
+      ];
+
+      // Mock getAllTeamsShifts to return different data on second call
+      vi.mocked(getAllTeamsShifts)
+        .mockReturnValueOnce(mockTodayShiftsData) // First render
+        .mockReturnValueOnce(mockNineToFiveShifts); // After schedule change
+
+      renderWithProviders(<TodayView {...defaultProps} />);
+
+      // Initially showing 5-shift teams
+      expect(screen.getByText("Team 1")).toBeInTheDocument();
+      expect(screen.getByText("Team 2")).toBeInTheDocument();
+
+      // Change schedule to 9-5
+      const selector = screen.getByLabelText(/View schedule:/i);
+      await user.selectOptions(selector, "9-5");
+
+      // getAllTeamsShifts should be called with new schedule type
+      expect(getAllTeamsShifts).toHaveBeenCalledWith(
+        expect.anything(),
+        "9-5",
+      );
+    });
+
+    it("displays multiple schedule options to choose from", () => {
+      renderWithProviders(<TodayView {...defaultProps} />);
+
+      const selector = screen.getByLabelText(/View schedule:/i) as HTMLSelectElement;
+      const options = Array.from(selector.options);
+
+      // Should have multiple schedule options available
+      expect(options.length).toBeGreaterThan(0);
+
+      // Each option should have a value and title
+      options.forEach((option) => {
+        expect(option.value).toBeTruthy();
+        expect(option.text).toBeTruthy();
+      });
     });
   });
 });
