@@ -1,10 +1,10 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import "@testing-library/jest-dom";
 import { describe, expect, it, vi } from "vitest";
 import { TodayView } from "../../src/components/TodayView";
 import { EventStoreProvider } from "../../src/contexts/EventStoreContext";
-import { SettingsProvider } from "../../src/contexts/SettingsContext";
+import { SettingsProvider, useSettings } from "../../src/contexts/SettingsContext";
 import { ToastProvider } from "../../src/contexts/ToastContext";
 import { dayjs } from "../../src/utils/dateTimeUtils";
 import type { ShiftResult } from "../../src/utils/shiftCalculations";
@@ -282,6 +282,65 @@ describe("TodayView", () => {
         expect(option.value).toBeTruthy();
         expect(option.text).toBeTruthy();
       });
+    });
+
+    it("syncs dropdown with user schedule after onboarding (bug fix)", async () => {
+      // This test validates the fix for the issue where the dropdown shows the wrong
+      // schedule after onboarding completes. The dropdown should automatically update
+      // when the user's schedule changes while the component remains mounted.
+      
+      // Start with 9-5 schedule in localStorage
+      window.localStorage.setItem(
+        "worktime_user_state",
+        JSON.stringify({
+          hasCompletedOnboarding: true,
+          myTeam: null,
+          scheduleType: "9-5",
+          settings: {
+            timeFormat: "24h",
+            theme: "auto",
+            notifications: "off",
+            vacationAllowance: { amount: 0, unit: "days", hoursPerDay: 8 },
+          },
+        }),
+      );
+
+      // Create a test component that allows us to trigger schedule changes
+      let triggerScheduleChange: (() => void) | null = null;
+      function TestWrapper() {
+        const { setScheduleType } = useSettings();
+        triggerScheduleChange = () => setScheduleType("5-shift");
+        return <TodayView {...defaultProps} />;
+      }
+
+      render(
+        <ToastProvider>
+          <SettingsProvider>
+            <EventStoreProvider>
+              <TestWrapper />
+            </EventStoreProvider>
+          </SettingsProvider>
+        </ToastProvider>,
+      );
+
+      const selector = screen.getByLabelText(/View schedule:/i) as HTMLSelectElement;
+      
+      // Initial state: schedule is "9-5"
+      expect(selector.value).toBe("9-5");
+
+      // Simulate onboarding completion by changing the schedule while component is mounted
+      // This is what happens when the user completes onboarding - the context updates
+      // but TodayView remains mounted
+      await act(async () => {
+        triggerScheduleChange?.();
+      });
+
+      // The dropdown should now show "5-shift" to match the user's schedule
+      // WITHOUT needing to unmount/remount the component
+      expect(selector.value).toBe("5-shift");
+
+      // Cleanup
+      window.localStorage.removeItem("worktime_user_state");
     });
   });
 });
