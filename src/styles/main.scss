@@ -3,6 +3,12 @@
 
 /* Worktime Custom Styles */
 
+/* Prevent horizontal scroll on mobile */
+html {
+  overflow-x: hidden;
+  max-width: 100%;
+}
+
 /* Month calendar CSS variables */
 :root {
   --month-calendar-bg: #fff;
@@ -308,6 +314,16 @@
 
   .btn-sm {
     font-size: 0.75rem;
+  }
+
+  /* Ensure modals fit on small screens */
+  .modal-dialog {
+    margin: 0.5rem;
+  }
+
+  /* Adjust card headers for mobile */
+  .card-header {
+    padding: 0.75rem;
   }
 }
 
