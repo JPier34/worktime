@@ -16,7 +16,6 @@ import { dayjs, getLocalizedShiftTime } from "../../utils/dateTimeUtils";
 
 import {
   calculateShift,
-  getCurrentShiftDay,
   getShiftByCode,
   getShiftDisplay,
 } from "../../utils/shiftCalculations";
@@ -63,8 +62,9 @@ export function ScheduleDetailModal({
 
     for (let i = 0; i < 7; i++) {
       const date = today.add(i, "day");
-      const shiftDay = getCurrentShiftDay(date);
-      const shift = calculateShift(shiftDay, teamNumber, scheduleType);
+      // Use calendar date directly for schedule display, not shift day
+      // This ensures the schedule shows the correct day even before 7 AM
+      const shift = calculateShift(date, teamNumber, scheduleType);
 
       schedule.push({
         date,
