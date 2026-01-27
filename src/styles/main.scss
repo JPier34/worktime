@@ -9,6 +9,20 @@ html {
   max-width: 100%;
 }
 
+/* Account for fixed navbar height */
+body {
+  padding-top: 60px;
+}
+
+/* Calendar legend popover - below fixed navbar (1030) */
+#calendar-legend-popover {
+  z-index: 1020;
+}
+
+.calendar-legend-emoji {
+  font-size: 0.875rem;
+}
+
 /* Month calendar CSS variables */
 :root {
   --month-calendar-bg: #fff;
@@ -207,6 +221,10 @@ html {
   font-size: 1.5rem;
 }
 
+.icon-lg {
+  font-size: 2rem;
+}
+
 .progress-thin {
   height: 8px;
 }
@@ -295,6 +313,32 @@ html {
   background-color: var(--shift-off);
   color: var(--shift-off-text);
   border: 1px solid var(--shift-off-text);
+}
+
+/* Higher specificity for shift badges to override Bootstrap defaults */
+.badge.shift-morning {
+  background-color: var(--shift-morning);
+  color: var(--shift-morning-text);
+}
+
+.badge.shift-late {
+  background-color: var(--shift-late);
+  color: var(--shift-late-text);
+}
+
+.badge.shift-day {
+  background-color: var(--shift-day);
+  color: var(--shift-day-text);
+}
+
+.badge.shift-night {
+  background-color: var(--shift-night);
+  color: var(--shift-night-text);
+}
+
+.badge.shift-off {
+  background-color: var(--shift-off);
+  color: var(--shift-off-text);
 }
 
 /* Team highlight for user's team */
@@ -571,7 +615,7 @@ html {
   box-shadow: 0 0 0 3px var(--month-calendar-today-shadow);
 }
 
-.month-calendar-day-button {
+.month-calendar-day-header {
   border: none;
   background: transparent;
   padding: 0.35rem 0.4rem;
@@ -582,11 +626,6 @@ html {
   width: 100%;
   font-weight: 600;
   color: inherit;
-}
-
-.month-calendar-day-button:focus-visible {
-  outline: 2px solid var(--month-calendar-focus-outline);
-  outline-offset: 2px;
 }
 
 .month-calendar-day-number {
@@ -674,15 +713,6 @@ html {
   font-size: 1.25rem;
 }
 
-.header-button {
-  padding-left: 0.5rem;
-  padding-right: 0.5rem;
-}
-
-.header-button-spacing {
-  gap: 0.25rem;
-}
-
 /* Team card hover effects */
 .team-card-interactive {
   transition: all 0.2s ease;
@@ -723,7 +753,9 @@ html {
   --shift-off: #212121;
   --shift-off-text: #bdbdbd;
   --primary-color: #90caf9;
+}
 
+[data-bs-theme="dark"]:not(.navbar) {
   background-color: #181a1b !important;
   color: #e0e0e0 !important;
 }
@@ -733,8 +765,7 @@ html {
 [data-bs-theme="dark"] .offcanvas,
 [data-bs-theme="dark"] .table,
 [data-bs-theme="dark"] .tab-content,
-[data-bs-theme="dark"] .nav,
-[data-bs-theme="dark"] .navbar,
+[data-bs-theme="dark"] .nav:not(.navbar .nav),
 [data-bs-theme="dark"] .dropdown-menu {
   background-color: #23272b !important;
   color: #e0e0e0 !important;
@@ -823,4 +854,72 @@ html {
   font-family:
     ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
     monospace;
+}
+
+/* Working Calendar Styles */
+:root {
+  --calendar-time-off-bg: rgba(255, 193, 7, 0.1);
+}
+
+[data-bs-theme="dark"] {
+  --calendar-time-off-bg: rgba(255, 193, 7, 0.15);
+}
+
+.working-schedule-calendar .calendar-grid {
+  margin-bottom: 0;
+}
+
+.calendar-day-cell {
+  vertical-align: top;
+  position: relative;
+  min-height: 80px;
+  transition: background-color 0.15s ease-in-out;
+}
+
+.calendar-day-cell.today-cell {
+  background-color: var(--month-calendar-today-bg);
+  border: 2px solid var(--month-calendar-today-border) !important;
+  box-shadow: 0 0 0 1px var(--month-calendar-today-shadow);
+}
+
+.calendar-day-cell.focused-cell {
+  outline: 2px solid var(--month-calendar-focus-outline);
+  outline-offset: -2px;
+}
+
+.calendar-day-cell.weekend-cell {
+  background-color: var(--month-calendar-day-weekend);
+}
+
+.calendar-day-cell.public-holiday-cell {
+  background-color: var(--month-calendar-public-holiday-bg);
+  border-left: 3px solid var(--month-calendar-public-holiday-border) !important;
+}
+
+.calendar-day-cell.time-off-cell {
+  background-color: var(--calendar-time-off-bg);
+}
+
+.calendar-day-cell.text-muted {
+  opacity: 0.5;
+}
+
+.calendar-legend .badge {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+}
+
+/* Shift badge in calendar cells */
+.month-calendar-shift-badge {
+  display: inline-block;
+  padding: 0.125rem 0.4rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1;
+  color: #fff;
+  text-align: center;
+  white-space: nowrap;
+  vertical-align: baseline;
+  border-radius: 0.25rem;
+  margin-bottom: 0.25rem;
 }

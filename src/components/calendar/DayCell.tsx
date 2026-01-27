@@ -1,10 +1,13 @@
-import type { KeyboardEvent } from "react";
 import type { HdayEvent } from "../../lib/hday/types";
 import type { PublicHolidayInfo } from "../../types/publicHolidays";
 import type { SchoolHolidayInfo } from "../../types/schoolHolidays";
 import type { PaydayInfo } from "../../types/paydays";
 import { dayjs } from "../../utils/dateTimeUtils";
-import { getEventColorClass, getEventTypeLabel, getTimeLocationSymbol } from "../../lib/hday/parser";
+import {
+  getEventColorClass,
+  getEventTypeLabel,
+  getTimeLocationSymbol,
+} from "../../lib/hday/parser";
 
 export type DayEvent = {
   event: HdayEvent;
@@ -16,14 +19,12 @@ interface DayCellProps {
   isCurrentMonth: boolean;
   isToday: boolean;
   isWeekend: boolean;
-  isFocused: boolean;
   publicHoliday?: PublicHolidayInfo;
   paydayInfo?: PaydayInfo;
   schoolHoliday?: SchoolHolidayInfo;
   events: DayEvent[];
+  shiftBadge?: { code: string; label: string; isWorking: boolean }; // Optional shift info
   onViewEvent: (index: number) => void;
-  onKeyDown: (event: KeyboardEvent<HTMLButtonElement>, date: dayjs.Dayjs) => void;
-  buttonRef: (node: HTMLButtonElement | null) => void;
   onDayContextMenu?: (date: dayjs.Dayjs, x: number, y: number) => void;
   onEventContextMenu?: (index: number, x: number, y: number) => void;
 }
@@ -108,11 +109,9 @@ const getIndicatorDetails = (
  * - Visual indicators for courses, public holidays, school holidays, and paydays
  * - Highlights for weekends, today, and holidays
  * - Click-to-view existing events, right-click context menu for actions
- * - Keyboard navigation support via arrow keys
  *
  * Accessibility:
  * - ARIA labels with full date and holiday information
- * - Focus management for keyboard navigation
  * - Color indicators supplemented with emoji symbols
  * - Semantic button elements for all interactive areas
  *
@@ -121,14 +120,11 @@ const getIndicatorDetails = (
  * @param props.isCurrentMonth - Whether this day is in the currently displayed month
  * @param props.isToday - Whether this day is today
  * @param props.isWeekend - Whether this day is Saturday or Sunday
- * @param props.isFocused - Whether this cell currently has keyboard focus
  * @param props.publicHoliday - Public holiday info if this day is a holiday
  * @param props.paydayInfo - Payday info if this day is a payday
  * @param props.schoolHoliday - School holiday info if this day is a school holiday
  * @param props.events - Array of events occurring on this day
  * @param props.onViewEvent - Callback when user clicks to view an event
- * @param props.onKeyDown - Callback for keyboard navigation
- * @param props.buttonRef - Ref callback for focus management
  * @param props.onDayContextMenu - Optional callback for day cell right-click context menu
  * @param props.onEventContextMenu - Optional callback for event chip right-click context menu
  */
@@ -137,14 +133,12 @@ export function DayCell({
   isCurrentMonth,
   isToday,
   isWeekend,
-  isFocused,
   publicHoliday,
   paydayInfo,
   schoolHoliday,
   events,
+  shiftBadge,
   onViewEvent,
-  onKeyDown,
-  buttonRef,
   onDayContextMenu,
   onEventContextMenu,
 }: DayCellProps) {
@@ -155,6 +149,9 @@ export function DayCell({
   const ariaLabelParts = [date.format("dddd, MMMM D, YYYY")];
   if (isToday) {
     ariaLabelParts.push("Today");
+  }
+  if (shiftBadge) {
+    ariaLabelParts.push(`Shift: ${shiftBadge.label}`);
   }
   if (publicHoliday) {
     ariaLabelParts.push(publicHoliday.name);
@@ -186,14 +183,7 @@ export function DayCell({
         }
       }}
     >
-      <button
-        type="button"
-        className="month-calendar-day-button"
-        onKeyDown={(event) => onKeyDown(event, date)}
-        ref={buttonRef}
-        tabIndex={isFocused ? 0 : -1}
-        aria-label={ariaLabelParts.join(" - ")}
-      >
+      <div className="month-calendar-day-header" aria-label={ariaLabelParts.join(" - ")}>
         <span className="month-calendar-day-number">{date.date()}</span>
         <span className="month-calendar-day-indicators" aria-hidden="true">
           {indicators.map((indicator) => (
@@ -211,8 +201,17 @@ export function DayCell({
             </span>
           ))}
         </span>
-      </button>
+      </div>
       <div className="month-calendar-events">
+        {/* Shift badge - shows working schedule when provided */}
+        {shiftBadge && (
+          <div
+            className={`month-calendar-shift-badge ${shiftBadge.isWorking ? "bg-success" : "bg-secondary"}`}
+            title={shiftBadge.label}
+          >
+            {shiftBadge.code}
+          </div>
+        )}
         {visibleEvents.map(({ event, index }) => {
           const colorClass = getEventColorClass(event.flags);
           const label = event.title || getEventTypeLabel(event.flags);
@@ -255,7 +254,6 @@ export function DayCell({
         {hiddenCount > 0 && (
           <div className="month-calendar-event-overflow text-muted">+{hiddenCount} more</div>
         )}
-        {events.length === 0 && <div className="month-calendar-event-empty text-muted">—</div>}
       </div>
     </div>
   );

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MonthCalendar } from "../../../src/components/timeoff/MonthCalendar";
+import { MonthCalendar } from "../../../src/components/calendar/MonthCalendar";
 import { dayjs } from "../../../src/utils/dateTimeUtils";
 import type { HdayEvent } from "../../../src/lib/hday/types";
 
@@ -192,106 +192,6 @@ describe("MonthCalendar", () => {
     });
   });
 
-  describe("Keyboard Navigation", () => {
-    it("should handle arrow key navigation between days", async () => {
-      const user = userEvent.setup();
-      render(<MonthCalendar {...defaultProps} />);
-
-      // Find and focus a day button
-      const dayButtons = screen.getAllByRole("button");
-      const targetButton = dayButtons.find((btn) =>
-        btn.getAttribute("aria-label")?.includes("Wednesday, January 15"),
-      );
-
-      expect(targetButton).toBeDefined();
-      targetButton!.focus();
-      expect(targetButton).toHaveFocus();
-
-      // Press ArrowRight
-      await user.keyboard("{ArrowRight}");
-
-      // Focus should move to next day
-      const nextButton = dayButtons.find((btn) =>
-        btn.getAttribute("aria-label")?.includes("Thursday, January 16"),
-      );
-      expect(nextButton).toBeDefined();
-      expect(nextButton).toHaveFocus();
-    });
-
-    it("should navigate to next month when pressing arrow beyond month boundary", async () => {
-      const user = userEvent.setup();
-      render(<MonthCalendar {...defaultProps} />);
-
-      // Find last day of January (31st)
-      const dayButtons = screen.getAllByRole("button");
-      const lastDayButton = dayButtons.find((btn) =>
-        btn.getAttribute("aria-label")?.includes("Friday, January 31, 2025"),
-      );
-
-      expect(lastDayButton).toBeDefined();
-      lastDayButton!.focus();
-
-      // Press ArrowRight to move to next month
-      await user.keyboard("{ArrowRight}");
-
-      // Should call onMonthChange
-      expect(mockOnMonthChange).toHaveBeenCalled();
-    });
-
-    it("should handle Home key to jump to first day of month", async () => {
-      const user = userEvent.setup();
-      render(<MonthCalendar {...defaultProps} />);
-
-      // Navigate to January 15 using arrow keys
-      // Initial focus is on January 1, so press ArrowRight 14 times to reach January 15
-      for (let i = 0; i < 14; i++) {
-        await user.keyboard("{ArrowRight}");
-      }
-
-      // Verify we're on January 15
-      const dayButtons = screen.getAllByRole("button");
-      const jan15Button = dayButtons.find((btn) =>
-        btn.getAttribute("aria-label")?.includes("Wednesday, January 15, 2025"),
-      );
-      expect(jan15Button).toBeDefined();
-      expect(jan15Button).toHaveFocus();
-
-      // Press Home
-      await user.keyboard("{Home}");
-
-      // Focus should move to first day of month (January 1)
-      const firstDayButton = dayButtons.find((btn) =>
-        btn.getAttribute("aria-label")?.includes("Wednesday, January 1, 2025"),
-      );
-      expect(firstDayButton).toBeDefined();
-      expect(firstDayButton).toHaveFocus();
-    });
-
-    it("should handle End key to jump to last day of month", async () => {
-      const user = userEvent.setup();
-      render(<MonthCalendar {...defaultProps} />);
-
-      // Focus any day button
-      const dayButtons = screen.getAllByRole("button");
-      const someButton = dayButtons.find((btn) =>
-        btn.getAttribute("aria-label")?.includes("January 15"),
-      );
-
-      expect(someButton).toBeDefined();
-      someButton!.focus();
-
-      // Press End
-      await user.keyboard("{End}");
-
-      // Focus should move to last day of month
-      const lastDayButton = dayButtons.find((btn) =>
-        btn.getAttribute("aria-label")?.includes("Friday, January 31, 2025"),
-      );
-      expect(lastDayButton).toBeDefined();
-      expect(lastDayButton).toHaveFocus();
-    });
-  });
-
   describe("Holiday Indicators", () => {
     it("should display public holiday indicators", () => {
       const publicHolidays = new Map([
@@ -300,24 +200,15 @@ describe("MonthCalendar", () => {
           {
             name: "Test Holiday",
             localName: "Test Holiday Local",
-            date: "2025-01-15",
-            countryCode: "BE",
-            fixed: true,
-            global: true,
-            launchYear: 2000,
-            type: "Public",
           },
         ],
       ]);
 
       render(<MonthCalendar {...defaultProps} publicHolidays={publicHolidays} />);
 
-      // Should show holiday emoji in the day cell
-      const dayButtons = screen.getAllByRole("button");
-      const holidayButton = dayButtons.find((btn) =>
-        btn.getAttribute("aria-label")?.includes("Test Holiday"),
-      );
-      expect(holidayButton).toBeDefined();
+      // Should show holiday emoji in the day cell - look for element with aria-label
+      const holidayHeader = screen.getByLabelText(/Test Holiday/i);
+      expect(holidayHeader).toBeInTheDocument();
     });
 
     it("should display payday indicators", () => {
@@ -333,11 +224,9 @@ describe("MonthCalendar", () => {
 
       render(<MonthCalendar {...defaultProps} paydayMap={paydayMap} />);
 
-      const dayButtons = screen.getAllByRole("button");
-      const paydayButton = dayButtons.find((btn) =>
-        btn.getAttribute("aria-label")?.includes("Payday"),
-      );
-      expect(paydayButton).toBeDefined();
+      // Should show payday in the day cell - look for element with aria-label
+      const paydayHeader = screen.getByLabelText(/Payday/i);
+      expect(paydayHeader).toBeInTheDocument();
     });
   });
 });

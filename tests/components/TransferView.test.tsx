@@ -126,6 +126,26 @@ describe("TransferView", () => {
       renderWithProviders(<TransferView {...defaultProps} myTeam={null} />);
       expect(screen.getByText(/Please select your team/)).toBeInTheDocument();
     });
+
+    it("shows team selector shortcut when no team selected and handler provided", async () => {
+      const user = userEvent.setup();
+      const handleChangeTeam = vi.fn();
+      mockUseTransferCalculations.mockReturnValue({
+        ...defaultHookReturn,
+        transfers: [],
+        validatedMyTeam: null, // Set validated team to null
+      });
+
+      renderWithProviders(
+        <TransferView {...defaultProps} myTeam={null} onChangeTeam={handleChangeTeam} />,
+      );
+
+      const button = screen.getByRole("button", { name: /Select Team/i });
+      expect(button).toBeInTheDocument();
+
+      await user.click(button);
+      expect(handleChangeTeam).toHaveBeenCalled();
+    });
   });
 
   describe("Team comparison UI", () => {

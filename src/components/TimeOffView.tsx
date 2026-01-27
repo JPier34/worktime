@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Button from "react-bootstrap/Button";
 import ButtonGroup from "react-bootstrap/ButtonGroup";
 import Card from "react-bootstrap/Card";
@@ -12,18 +12,13 @@ import {
   normalizeEventFlags,
 } from "../lib/hday/parser";
 import { isValidDate } from "../lib/hday/validation";
+import { dayjs } from "../utils/dateTimeUtils";
 import { useEventStore } from "../contexts/EventStoreContext";
 import { useSettings } from "../contexts/SettingsContext";
 import { useToast } from "../contexts/ToastContext";
 import { useViewMode } from "../hooks/useViewMode";
-import { dayjs } from "../utils/dateTimeUtils";
-import type { PaydayInfo } from "../types/paydays";
-import { getMonthlyPaydayMap } from "../utils/paydayUtils";
-import { usePublicHolidays } from "../hooks/usePublicHolidays";
-import { useSchoolHolidays } from "../hooks/useSchoolHolidays";
 import { EventModal } from "./EventModal";
 import { ConfirmationDialog } from "./ConfirmationDialog";
-import { MonthCalendar } from "./timeoff/MonthCalendar";
 import { RawContentPanel } from "./timeoff/RawContentPanel";
 import { VacationStatsPanel } from "./timeoff/VacationStatsPanel";
 
@@ -58,35 +53,44 @@ const TIME_LOCATION_FLAGS_AS_EVENT_FLAGS: readonly EventFlag[] = TIME_LOCATION_F
 /**
  * Valid view modes for the Time Off tab.
  * Hoisted to module level to prevent unnecessary re-renders when used in useViewMode.
+ * Note: Calendar view has been moved to its own main tab.
  */
-const TIMEOFF_VIEWS = ["calendar", "table", "stats", "raw"] as const;
+const TIMEOFF_VIEWS = ["table", "stats", "raw"] as const;
 
 /**
  * Default weekday value for weekly events (1 = Monday).
  */
 const DEFAULT_WEEKDAY = 1;
 
+const isEditableTarget = (target: EventTarget | null) => {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  const isTextInput =
+    target instanceof HTMLInputElement &&
+    target.type !== "checkbox" &&
+    target.type !== "radio";
+
+  return (
+    isTextInput ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement ||
+    target.isContentEditable
+  );
+};
+
 /**
  * Empty state component for when no time-off events exist.
  * Adapts styling and messaging based on the current view mode.
  */
-function EmptyState({ mode }: { mode: "calendar" | "table" }) {
-  const isCalendar = mode === "calendar";
-  const containerClasses = isCalendar
-    ? "text-center text-muted mt-4"
-    : "text-center text-muted py-5";
-  const iconClasses = isCalendar
-    ? "bi bi-calendar-x display-6 d-block mb-2"
-    : "bi bi-calendar-x display-4 d-block mb-3";
-
+function EmptyState() {
   return (
-    <div className={containerClasses}>
-      <i className={iconClasses}></i>
-      <p className={isCalendar ? "mb-0" : ""}>No time-off events yet.</p>
+    <div className="text-center text-muted py-5">
+      <i className="bi bi-calendar-x display-4 d-block mb-3"></i>
+      <p>No time-off events yet.</p>
       <p className="small">
-        {isCalendar
-          ? 'Click a day to add your first event, or use "Import" to load a .hday file.'
-          : 'Click "Add Event" to create your first event, or "Import" to load an existing .hday file.'}
+        Click "Add Event" to create your first event, or "Import" to load an existing .hday file.
       </p>
     </div>
   );
@@ -113,7 +117,7 @@ function EmptyState({ mode }: { mode: "calendar" | "table" }) {
  */
 interface TimeOffViewProps {
   isActive?: boolean;
-  initialView?: string; // Initial view mode from URL parameter ("calendar", "table", "stats", or "raw")
+  initialView?: string; // Initial view mode from URL parameter ("table", "stats", or "raw")
 }
 
 export function TimeOffView({ isActive = false, initialView }: TimeOffViewProps) {
@@ -135,10 +139,6 @@ export function TimeOffView({ isActive = false, initialView }: TimeOffViewProps)
   const toast = useToast();
 
   const [viewMode, setViewMode] = useViewMode(initialView, TIMEOFF_VIEWS, "table");
-
-  const [calendarMonth, setCalendarMonth] = useState(() => dayjs());
-  const { publicHolidayMap } = usePublicHolidays(calendarMonth.year());
-  const { schoolHolidayMap } = useSchoolHolidays(calendarMonth.year());
 
   // Modal state
   const [showEventModal, setShowEventModal] = useState(false);
@@ -172,7 +172,7 @@ export function TimeOffView({ isActive = false, initialView }: TimeOffViewProps)
   const formRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const resetForm = () => {
+  const resetForm = useCallback(() => {
     setEventType("range");
     setEventWeekday(DEFAULT_WEEKDAY);
     setEventStart("");
@@ -181,7 +181,7 @@ export function TimeOffView({ isActive = false, initialView }: TimeOffViewProps)
     setEventFlags([]);
     setStartDateError("");
     setEndDateError("");
-  };
+  }, []);
 
   const validateForm = (): boolean => {
     let valid = true;
@@ -202,7 +202,7 @@ export function TimeOffView({ isActive = false, initialView }: TimeOffViewProps)
       if (eventEnd && !isValidDate(eventEnd)) {
         setEndDateError("Invalid date (e.g., Feb 30 or April 31)");
         valid = false;
-      } else if (eventEnd && eventStart && eventEnd < eventStart) {
+      } else if (eventEnd && eventStart && dayjs(eventEnd).isBefore(dayjs(eventStart))) {
         setEndDateError("End date must be after start date");
         valid = false;
       } else {
@@ -213,24 +213,14 @@ export function TimeOffView({ isActive = false, initialView }: TimeOffViewProps)
     return valid;
   };
 
-  const handleOpenAddModal = () => {
+  const handleOpenAddModal = useCallback(() => {
     resetForm();
     setEditIndex(-1);
     setModalMode("add");
     setShowEventModal(true);
-  };
+  }, [resetForm]);
 
-  const handleAddEventForDate = (date: dayjs.Dayjs) => {
-    resetForm();
-    setEditIndex(-1);
-    setModalMode("add");
-    setEventType("range");
-    setEventStart(date.format("YYYY/MM/DD"));
-    setEventEnd(date.format("YYYY/MM/DD"));
-    setShowEventModal(true);
-  };
-
-  const prefillFormFromEvent = (event: HdayEvent) => {
+  const prefillFormFromEvent = useCallback((event: HdayEvent) => {
     if (event.type === "range") {
       setEventType("range");
       setEventStart(event.start || "");
@@ -247,7 +237,7 @@ export function TimeOffView({ isActive = false, initialView }: TimeOffViewProps)
     setEventFlags(event.flags || []);
     setStartDateError("");
     setEndDateError("");
-  };
+  }, []);
 
   const handleOpenEditModal = (index: number) => {
     const event = events[index];
@@ -259,19 +249,21 @@ export function TimeOffView({ isActive = false, initialView }: TimeOffViewProps)
     setShowEventModal(true);
   };
 
-  const handleOpenViewModal = (index: number) => {
-    const event = events[index];
-    if (!event) return;
-
-    setEditIndex(index);
-    prefillFormFromEvent(event);
-    setModalMode("view");
-    setShowEventModal(true);
-  };
-
   const handleSwitchToEdit = () => {
     setModalMode("edit");
   };
+
+  const handleCancelEditMode = useCallback(() => {
+    if (editIndex < 0) {
+      return;
+    }
+    const event = events[editIndex];
+    if (!event) {
+      return;
+    }
+    prefillFormFromEvent(event);
+    setModalMode("view");
+  }, [editIndex, events, prefillFormFromEvent]);
 
   const handleSubmitEvent = () => {
     if (!validateForm()) {
@@ -359,9 +351,9 @@ export function TimeOffView({ isActive = false, initialView }: TimeOffViewProps)
     }
   }, [isRawEditorDirty, rawText]);
 
-  const handleImport = () => {
+  const handleImport = useCallback(() => {
     fileInputRef.current?.click();
-  };
+  }, []);
 
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -385,7 +377,7 @@ export function TimeOffView({ isActive = false, initialView }: TimeOffViewProps)
     }
   };
 
-  const handleExport = () => {
+  const handleExport = useCallback(() => {
     const hdayContent = exportHday();
 
     if (!hdayContent.trim()) {
@@ -404,7 +396,7 @@ export function TimeOffView({ isActive = false, initialView }: TimeOffViewProps)
     URL.revokeObjectURL(url);
 
     toast.showSuccess("Exported timeoff.hday", "📤");
-  };
+  }, [exportHday, toast]);
 
   const handleRawEditorChange = useCallback((value: string) => {
     setRawEditorText(value);
@@ -444,19 +436,44 @@ export function TimeOffView({ isActive = false, initialView }: TimeOffViewProps)
     toast.showSuccess("Redo successful", "↪️");
   }, [canRedo, redo, toast]);
 
-  useEffect(() => {
-    if (!isActive) {
-      return;
-    }
+  // Ref to hold latest handlers to avoid stale closures in keyboard event listener
+  const handlersRef = useRef({
+    handleCancelEditMode,
+    handleExport,
+    handleImport,
+    handleRedo,
+    handleUndo,
+  });
 
-    const handleKeyDown = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement;
-      if (
-        target instanceof HTMLInputElement ||
-        target instanceof HTMLTextAreaElement ||
-        target instanceof HTMLSelectElement ||
-        (target instanceof HTMLElement && target.isContentEditable)
-      ) {
+  useEffect(() => {
+    handlersRef.current = {
+      handleCancelEditMode,
+      handleExport,
+      handleImport,
+      handleRedo,
+      handleUndo,
+    };
+  }, [handleCancelEditMode, handleExport, handleImport, handleRedo, handleUndo]);
+
+  const handleTimeOffKeyDown = useCallback(
+    (event: KeyboardEvent) => {
+      if (isEditableTarget(event.target)) {
+        return;
+      }
+
+      if (event.key === "Escape") {
+        if (showEventModal && modalMode === "edit" && editIndex >= 0) {
+          event.preventDefault();
+          handlersRef.current.handleCancelEditMode();
+        }
+        return;
+      }
+
+      if (event.key === "Delete") {
+        if (viewMode === "table" && selectedIndices.length > 0) {
+          event.preventDefault();
+          setShowBulkDeleteConfirm(true);
+        }
         return;
       }
 
@@ -465,30 +482,39 @@ export function TimeOffView({ isActive = false, initialView }: TimeOffViewProps)
         if (key === "z") {
           event.preventDefault();
           if (event.shiftKey) {
-            handleRedo();
+            handlersRef.current.handleRedo();
           } else {
-            handleUndo();
+            handlersRef.current.handleUndo();
           }
         }
         if (key === "y") {
           event.preventDefault();
-          handleRedo();
+          handlersRef.current.handleRedo();
+        }
+        if (key === "s") {
+          event.preventDefault();
+          handlersRef.current.handleExport();
+        }
+        if (key === "i") {
+          event.preventDefault();
+          handlersRef.current.handleImport();
         }
       }
-    };
+    },
+    [editIndex, modalMode, selectedIndices.length, showEventModal, viewMode],
+  );
 
-    document.addEventListener("keydown", handleKeyDown);
+  useEffect(() => {
+    if (!isActive) {
+      return;
+    }
+
+    document.addEventListener("keydown", handleTimeOffKeyDown);
 
     return () => {
-      document.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener("keydown", handleTimeOffKeyDown);
     };
-  }, [handleRedo, handleUndo, isActive]);
-
-  const currentYear = calendarMonth.year();
-  const paydayMapForYear = useMemo<Map<string, PaydayInfo>>(
-    () => getMonthlyPaydayMap(currentYear, publicHolidayMap),
-    [currentYear, publicHolidayMap],
-  );
+  }, [handleTimeOffKeyDown, isActive]);
 
   const previewLine = buildPreviewLine({
     eventType,
@@ -532,7 +558,6 @@ export function TimeOffView({ isActive = false, initialView }: TimeOffViewProps)
   };
 
   const viewModeHelpText = {
-    calendar: "Click a day to add events, or select an event to edit.",
     table: "Select events from the table to edit or delete.",
     stats: "Review allowance usage and vacation breakdowns by year.",
     raw: "Edit raw .hday content directly. Click Apply to save changes.",
@@ -620,17 +645,11 @@ export function TimeOffView({ isActive = false, initialView }: TimeOffViewProps)
           <div className="d-flex flex-wrap align-items-center justify-content-between mb-3 gap-2">
             <ButtonGroup aria-label="Toggle time off view">
               <Button
-                variant={viewMode === "calendar" ? "primary" : "outline-primary"}
-                size="sm"
-                onClick={() => setViewMode("calendar")}
-              >
-                Calendar
-              </Button>
-              <Button
                 variant={viewMode === "table" ? "primary" : "outline-primary"}
                 size="sm"
                 onClick={() => setViewMode("table")}
               >
+                <i className="bi bi-table me-1" aria-hidden="true"></i>
                 Table
               </Button>
               <Button
@@ -638,6 +657,7 @@ export function TimeOffView({ isActive = false, initialView }: TimeOffViewProps)
                 size="sm"
                 onClick={() => setViewMode("stats")}
               >
+                <i className="bi bi-bar-chart-line me-1" aria-hidden="true"></i>
                 Statistics
               </Button>
               <Button
@@ -654,27 +674,9 @@ export function TimeOffView({ isActive = false, initialView }: TimeOffViewProps)
             <span className="text-muted small">{viewModeHelpText[viewMode]}</span>
           </div>
 
-          {viewMode === "calendar" && (
-            <div role="region" aria-label="Time off calendar view">
-              <MonthCalendar
-                events={events}
-                month={calendarMonth}
-                publicHolidays={publicHolidayMap}
-                schoolHolidays={schoolHolidayMap}
-                paydayMap={paydayMapForYear}
-                onMonthChange={setCalendarMonth}
-                onAddEvent={handleAddEventForDate}
-                onViewEvent={handleOpenViewModal}
-                onEditEvent={handleOpenEditModal}
-                onDeleteEvent={handleDeleteClick}
-              />
-              {events.length === 0 && <EmptyState mode="calendar" />}
-            </div>
-          )}
-
           {viewMode === "table" &&
             (events.length === 0 ? (
-              <EmptyState mode="table" />
+              <EmptyState />
             ) : (
               <Table responsive hover>
                 <thead>
@@ -703,9 +705,7 @@ export function TimeOffView({ isActive = false, initialView }: TimeOffViewProps)
                 <tbody>
                   {events.map((event, index) => {
                     const eventColorClass =
-                      event.type !== "unknown"
-                        ? getEventColorClass(event.flags)
-                        : "event-unknown";
+                      event.type !== "unknown" ? getEventColorClass(event.flags) : "event-unknown";
                     const eventLabel =
                       event.type !== "unknown" ? getEventTypeLabel(event.flags) : "Unknown";
                     const symbol =
@@ -861,7 +861,7 @@ export function TimeOffView({ isActive = false, initialView }: TimeOffViewProps)
       <ConfirmationDialog
         isOpen={showDeleteConfirm}
         title="Delete Event"
-        message="Are you sure you want to delete this event? This action can be undone."
+        message="Are you sure you want to delete this event? You can undo this with the Undo button or Ctrl+Z."
         confirmLabel="Delete"
         cancelLabel="Cancel"
         variant="danger"
@@ -872,7 +872,7 @@ export function TimeOffView({ isActive = false, initialView }: TimeOffViewProps)
       <ConfirmationDialog
         isOpen={showBulkDeleteConfirm}
         title="Delete Selected Events"
-        message={`Are you sure you want to delete ${selectedIndices.length} selected events? This action can be undone.`}
+        message={`Are you sure you want to delete ${selectedIndices.length} selected events? You can undo this with the Undo button or Ctrl+Z.`}
         confirmLabel="Delete"
         cancelLabel="Cancel"
         variant="danger"
