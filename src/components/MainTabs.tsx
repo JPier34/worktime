@@ -2,6 +2,7 @@ import type { Dayjs } from "dayjs";
 import { useCallback, useId, useMemo, useState } from "react";
 import Tab from "react-bootstrap/Tab";
 import Tabs from "react-bootstrap/Tabs";
+import type { ScheduleOption } from "../data/rosters";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
 import { useSyncedState } from "../hooks/useSyncedState";
 import { CalendarView } from "./CalendarView";
@@ -53,10 +54,12 @@ export function MainTabs({
   const [activeKey, setActiveKey] = useSyncedState(activeTab);
   const [showTeamDetail, setShowTeamDetail] = useState(false);
   const [selectedTeamForDetail, setSelectedTeamForDetail] = useState<number>(1);
-  const [transferTargetTeam, setTransferTargetTeam] = useState<number | null>(null);
+  const [selectedScheduleForDetail, setSelectedScheduleForDetail] =
+    useState<ScheduleOption | null>(null);
 
-  const handleTeamClick = (teamNumber: number) => {
+  const handleTeamClick = (teamNumber: number, scheduleType: ScheduleOption | null) => {
     setSelectedTeamForDetail(teamNumber);
+    setSelectedScheduleForDetail(scheduleType);
     setShowTeamDetail(true);
   };
 
@@ -140,12 +143,12 @@ export function MainTabs({
             </>
           }
         >
-          <TransferView
-            myTeam={myTeam}
-            initialOtherTeam={transferTargetTeam}
-            onChangeSchedule={onChangeSchedule}
-            onChangeTeam={onChangeTeam}
-          />
+        <TransferView
+          myTeam={myTeam}
+          initialOtherTeam={null}
+          onChangeSchedule={onChangeSchedule}
+          onChangeTeam={onChangeTeam}
+        />
         </Tab>
 
         <Tab
@@ -162,20 +165,14 @@ export function MainTabs({
       </Tabs>
 
       {/* Schedule Detail Modal */}
-      <ScheduleDetailModal
-        show={showTeamDetail}
-        onHide={handleCloseTeamDetail}
-        teamNumber={selectedTeamForDetail}
-        onViewTransfers={(team: number) => {
-          setActiveTab("transfer");
-          // Only set initial other team if it's different from user's team
-          if (team !== myTeam) {
-            setTransferTargetTeam(team);
-          }
-          // Close the modal after navigation
-          setShowTeamDetail(false);
-        }}
-      />
+      {selectedScheduleForDetail && (
+        <ScheduleDetailModal
+          show={showTeamDetail}
+          onHide={handleCloseTeamDetail}
+          teamNumber={selectedTeamForDetail}
+          scheduleType={selectedScheduleForDetail}
+        />
+      )}
     </>
   );
 }

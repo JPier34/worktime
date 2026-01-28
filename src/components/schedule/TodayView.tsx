@@ -29,9 +29,9 @@ interface TodayViewProps {
   onPreviousDay: () => void;
   onNextDay: () => void;
   onTodayClick: () => void;
-  onTeamClick?: (teamNumber: number) => void;
+  onTeamClick?: (teamNumber: number, scheduleType: ScheduleOption | null) => void;
   isActive?: boolean;
-  viewingScheduleType?: ScheduleOption | null;
+  viewingScheduleType: ScheduleOption;
 }
 
 /**
@@ -44,7 +44,7 @@ interface TodayViewProps {
  * @param shiftResult - ShiftResult containing team number, shift, date and full code to display
  * @param isMyTeam - Whether this card corresponds to the current user's team (applies "my-team" styling)
  * @param isCurrentlyActive - Whether the team's shift is currently active (controls live overlay and badge)
- * @param onTeamClick - Optional callback invoked with the team number when the card is activated
+ * @param onTeamClick - Optional callback invoked with the team number and schedule type when the card is activated
  * @returns The Card element for the given team and shift; interactive when `onTeamClick` is provided
  */
 function TeamCard({
@@ -59,18 +59,16 @@ function TeamCard({
   isMyTeam: boolean;
   isCurrentlyActive: boolean;
   hasTeams: boolean;
-  onTeamClick?: (teamNumber: number) => void;
-  scheduleType: ScheduleOption | null;
+  onTeamClick?: (teamNumber: number, scheduleType: ScheduleOption | null) => void;
+  scheduleType: ScheduleOption;
 }) {
-  const { settings, scheduleType: fallbackScheduleType } = useSettings();
-  // Use the provided scheduleType, or fall back to user's default if null
-  const effectiveScheduleType = scheduleType || fallbackScheduleType;
+  const { settings } = useSettings();
 
   // Use shiftResult.shift directly - already contains emoji/className/name/hours
-  const shiftDisplay = getShiftDisplay(shiftResult.shift, effectiveScheduleType);
+  const shiftDisplay = getShiftDisplay(shiftResult.shift, scheduleType);
   const shiftTimeLabel = getFormattedShiftTime(
     shiftResult.shift,
-    effectiveScheduleType,
+    scheduleType,
     settings.timeFormat,
   );
 
@@ -148,7 +146,7 @@ function TeamCard({
     return (
       <Card
         className={classNames("team-card-interactive", "w-100", isMyTeam && "my-team")}
-        onClick={() => onTeamClick(shiftResult.teamNumber)}
+        onClick={() => onTeamClick(shiftResult.teamNumber, scheduleType)}
         role="button"
         aria-label={
           hasTeams ? `View details for Team ${shiftResult.teamNumber}` : "View schedule details"
@@ -161,7 +159,7 @@ function TeamCard({
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
-            onTeamClick(shiftResult.teamNumber);
+            onTeamClick(shiftResult.teamNumber, scheduleType);
           }
         }}
       >
@@ -188,7 +186,7 @@ function TeamCard({
  * @param onPreviousDay - Handler invoked when the "Previous" button is pressed
  * @param onNextDay - Handler invoked when the "Next" button is pressed
  * @param onTodayClick - Handler invoked when the "Today" button is pressed.
- * @param onTeamClick - Optional handler invoked with a team number when a team card is activated (click or keyboard).
+ * @param onTeamClick - Optional handler invoked with a team number and schedule type when a team card is activated (click or keyboard).
  * @returns A React element representing the Today card containing a responsive grid of team cards and any time-off alerts.
  */
 export function TodayView({
@@ -199,19 +197,16 @@ export function TodayView({
   onTodayClick,
   onTeamClick,
   isActive = false,
-  viewingScheduleType: propViewingScheduleType,
+  viewingScheduleType,
 }: TodayViewProps) {
   const { getEventsInRange } = useEventStore();
-  const { scheduleType: userScheduleType } = useSettings();
-
-  // Use prop if provided, otherwise fall back to user's schedule type
-  const scheduleType = propViewingScheduleType || userScheduleType;
-  const hasTeams = getScheduleConfig(scheduleType).showsTeamSelection;
+  const scheduleType = viewingScheduleType;
+  const hasTeams = getScheduleConfig(viewingScheduleType).showsTeamSelection;
 
   // Calculate shifts for the viewing schedule
   const todayShifts = useMemo(() => {
-    return getAllTeamsShifts(currentDate, scheduleType);
-  }, [currentDate, scheduleType]);
+    return getAllTeamsShifts(currentDate, viewingScheduleType);
+  }, [currentDate, viewingScheduleType]);
 
   // Keyboard shortcuts (only active when this tab is visible)
   const shortcuts = useMemo(

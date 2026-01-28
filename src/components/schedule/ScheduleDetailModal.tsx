@@ -1,15 +1,14 @@
-import { useId, useMemo } from "react";
+import { useMemo } from "react";
 import Badge from "react-bootstrap/Badge";
 import Button from "react-bootstrap/Button";
 import Card from "react-bootstrap/Card";
 import Col from "react-bootstrap/Col";
 import ListGroup from "react-bootstrap/ListGroup";
 import Modal from "react-bootstrap/Modal";
-import OverlayTrigger from "react-bootstrap/OverlayTrigger";
 import Row from "react-bootstrap/Row";
 import Table from "react-bootstrap/Table";
-import Tooltip from "react-bootstrap/Tooltip";
 import classNames from "classnames";
+import type { ScheduleOption } from "../../data/rosters";
 import { useSettings } from "../../contexts/SettingsContext";
 import { getScheduleConfig } from "../../utils/scheduleUtils";
 import { dayjs, getLocalizedShiftTime } from "../../utils/dateTimeUtils";
@@ -20,7 +19,7 @@ interface ScheduleDetailModalProps {
   show: boolean;
   onHide: () => void;
   teamNumber: number;
-  onViewTransfers?: (team: number) => void;
+  scheduleType: ScheduleOption;
 }
 
 /**
@@ -28,25 +27,28 @@ interface ScheduleDetailModalProps {
  *
  * Works with any schedule type - automatically adapts to single-user or multi-team schedules.
  * Displays the current shift and next shift, a day-by-day schedule with shift times,
- * weekly statistics (working/rest days and shift distribution), and quick actions including share and view transfers.
+ * and weekly statistics (working/rest days and shift distribution).
  *
  * @param teamNumber - Team number to display (for multi-team schedules) or 1 (for single-user schedules)
- * @param onViewTransfers - Optional callback invoked with the team number when "View Transfers" is activated (multi-team only)
+ * @param scheduleType - Schedule type for cross-schedule viewing
  * @returns The modal element for the specified team or schedule
  */
 export function ScheduleDetailModal({
   show,
   onHide,
   teamNumber,
-  onViewTransfers,
+  scheduleType,
 }: ScheduleDetailModalProps) {
-  const { settings, myTeam, scheduleType } = useSettings();
+  const { settings } = useSettings();
   const scheduleConfig = getScheduleConfig(scheduleType);
   const hasTeams = scheduleConfig.showsTeamSelection;
-
-  const calendarTooltipId = useId();
-  const transfersDisabledTooltipId = useId();
-  const transfersTooltipId = useId();
+  const teamCount = scheduleConfig.shiftConfig.teamCount || 1;
+  const isValidTeamNumber = hasTeams ? teamNumber >= 1 && teamNumber <= teamCount : teamNumber === 1;
+  if (!isValidTeamNumber) {
+    throw new Error(
+      `Invalid team number: ${teamNumber}. Expected ${hasTeams ? `1-${teamCount}` : "1"}`,
+    );
+  }
 
   // Current date key for daily recalculation
   const currentDateKey = dayjs().format("YYYY-MM-DD");
@@ -96,10 +98,6 @@ export function ScheduleDetailModal({
   const currentStatus = weekSchedule[0];
   const nextShift = weekSchedule.find((day) => day.shift.code !== "O" && !day.isToday);
 
-  // Button state logic - only allow viewing transfers for other teams, not your own
-  const isViewingOwnTeam = teamNumber === myTeam;
-  const canViewTransfers = !isViewingOwnTeam;
-
   return (
     <Modal show={show} onHide={onHide} size="lg" centered>
       <Modal.Header closeButton>
@@ -112,7 +110,7 @@ export function ScheduleDetailModal({
               "text-primary",
             )}
           ></i>
-          {hasTeams ? `Team ${teamNumber} Details` : "My Schedule Details"}
+          {hasTeams ? `Team ${teamNumber} Details` : "Schedule Details"}
         </Modal.Title>
       </Modal.Header>
       <Modal.Body>
@@ -302,64 +300,6 @@ export function ScheduleDetailModal({
           </Col>
         </Row>
 
-        {/* Quick Actions */}
-        <Card>
-          <Card.Body>
-            <h6 className="mb-3">
-              <i className="bi bi-lightning me-2"></i>
-              Quick Actions
-            </h6>
-            <div className="d-grid gap-2 d-md-flex">
-              <OverlayTrigger
-                placement="top"
-                overlay={<Tooltip id={calendarTooltipId}>Live calendar sync coming soon!</Tooltip>}
-              >
-                <span className="d-inline-block">
-                  <Button
-                    variant="outline-primary"
-                    size="sm"
-                    disabled
-                    style={{ pointerEvents: "none" }}
-                  >
-                    <i className="bi bi-calendar-plus me-1"></i>
-                    Add to Calendar
-                  </Button>
-                </span>
-              </OverlayTrigger>
-
-              {/* View Transfers button - only for multi-team schedules */}
-              {hasTeams && (
-                <OverlayTrigger
-                  placement="top"
-                  overlay={
-                    isViewingOwnTeam ? (
-                      <Tooltip id={transfersDisabledTooltipId}>
-                        You are viewing your own team. Transfers are only shown for other teams.
-                      </Tooltip>
-                    ) : (
-                      <Tooltip id={transfersTooltipId}>
-                        View transfers between your team and this team
-                      </Tooltip>
-                    )
-                  }
-                >
-                  <span className="d-inline-block">
-                    <Button
-                      variant="outline-secondary"
-                      size="sm"
-                      onClick={() => onViewTransfers?.(teamNumber)}
-                      disabled={!canViewTransfers}
-                      style={isViewingOwnTeam ? { pointerEvents: "none" } : {}}
-                    >
-                      <i className="bi bi-arrow-left-right me-1"></i>
-                      View Transfers
-                    </Button>
-                  </span>
-                </OverlayTrigger>
-              )}
-            </div>
-          </Card.Body>
-        </Card>
       </Modal.Body>
       <Modal.Footer>
         <Button variant="secondary" onClick={onHide}>
