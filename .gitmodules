@@ -1,6 +1,3 @@
-[submodule "HdayPlanner"]
-	path = HdayPlanner
-	url = https://github.com/tjorim/HdayPlanner
 [submodule "NextShift"]
 	path = NextShift
 	url = https://github.com/tjorim/NextShift
