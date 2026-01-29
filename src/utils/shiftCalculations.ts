@@ -57,7 +57,7 @@
  *
  * ## Edge Cases
  *
- * - **Pre-07:00 times**: Mapped to previous day's night shift via `getCurrentShiftDay()`
+ * - **Pre-07:00 times**: Mapped to previous day's night shift via `getCurrentShiftDay()` for schedules with night shifts
  * - **Invalid team numbers**: Throw error (fail fast)
  * - **Invalid dates**: Handled by dayjs (may return Invalid Date)
  * - **Year boundaries**: ISO week dates handled correctly (week 1 can be in December)
@@ -76,9 +76,9 @@ export type ShiftType = "M" | "L" | "N" | "D" | "O";
 
 export interface Shift {
   code: ShiftType;
+  displayCode: string;
   emoji: string;
   name: string;
-  hours: string;
   start: number | null;
   end: number | null;
   isWorking: boolean;
@@ -109,62 +109,62 @@ export interface OffDayProgress {
   total: number;
 }
 
-// Shift definitions
-export const SHIFTS = Object.freeze({
-  MORNING: Object.freeze({
-    code: "M",
-    emoji: "🌅",
-    name: "Morning",
-    hours: "07:00-15:00",
-    start: 7,
-    end: 15,
-    isWorking: true,
-    className: "shift-morning",
-  }),
-  LATE: Object.freeze({
-    code: "L",
-    emoji: "🌆",
-    name: "Late",
-    hours: "15:00-23:00",
-    start: 15,
-    end: 23,
-    isWorking: true,
-    className: "shift-late",
-  }),
-  DAY: Object.freeze({
-    code: "D",
-    emoji: "☀️",
-    name: "Day",
-    hours: "09:00-17:00",
-    start: 9,
-    end: 17,
-    isWorking: true,
-    className: "shift-day",
-  }),
-  NIGHT: Object.freeze({
-    code: "N",
-    emoji: "🌙",
-    name: "Night",
-    hours: "23:00-07:00",
-    start: 23,
-    end: 7,
-    isWorking: true,
-    className: "shift-night",
-  }),
-  OFF: Object.freeze({
-    code: "O",
-    emoji: "🏠",
-    name: "Off",
-    hours: "Not working",
-    start: null,
-    end: null,
-    isWorking: false,
-    className: "shift-off",
-  }),
-});
-
 const getScheduleForOption = (scheduleOption?: NullableScheduleOption) =>
   getScheduleConfig(scheduleOption);
+
+const buildShift = (
+  code: ShiftType,
+  definition: {
+    name: string;
+    start: number | null;
+    end: number | null;
+    displayCode: string;
+  },
+  emoji: string,
+  className: string,
+): Shift => {
+  return {
+    code,
+    displayCode: definition.displayCode,
+    emoji,
+    name: definition.name,
+    start: definition.start,
+    end: definition.end,
+    isWorking: code !== "O",
+    className,
+  };
+};
+
+const getShiftTimeDefinition = (scheduleOption: NullableScheduleOption, code: ShiftType) => {
+  const schedule = getScheduleForOption(scheduleOption);
+  return schedule.shiftConfig.shiftTimes[code];
+};
+
+const buildShiftTemplate = (code: ShiftType, emoji: string, className: string): Shift =>
+  buildShift(
+    code,
+    {
+      name: "",
+      start: null,
+      end: null,
+      displayCode: code,
+    },
+    emoji,
+    className,
+  );
+
+export const SHIFTS = Object.freeze({
+  MORNING: Object.freeze(buildShiftTemplate("M", "🌅", "shift-morning")),
+  LATE: Object.freeze(buildShiftTemplate("L", "🌆", "shift-late")),
+  DAY: Object.freeze(buildShiftTemplate("D", "☀️", "shift-day")),
+  NIGHT: Object.freeze(buildShiftTemplate("N", "🌙", "shift-night")),
+  OFF: Object.freeze(buildShiftTemplate("O", "🏠", "shift-off")),
+});
+
+const scheduleHasNightShift = (scheduleOption: NullableScheduleOption): boolean => {
+  const schedule = getScheduleForOption(scheduleOption);
+  return schedule.shiftConfig.schedulePattern.includes("N");
+};
 
 const getTeamCountForSchedule = (scheduleOption?: NullableScheduleOption) => {
   const schedule = getScheduleForOption(scheduleOption);
@@ -192,23 +192,35 @@ const getReferenceTeamForSchedule = (scheduleOption?: NullableScheduleOption): n
   return schedule.shiftConfig.referenceTeam;
 };
 
-const mapShiftCodeToShift = (code: ShiftType): Shift => {
-  switch (code) {
-    case "M":
-      return SHIFTS.MORNING;
-    case "L":
-      return SHIFTS.LATE;
-    case "N":
-      return SHIFTS.NIGHT;
-    case "D":
-      return SHIFTS.DAY;
-    case "O":
-      return SHIFTS.OFF;
-    default: {
-      const _exhaustive: never = code;
-      return _exhaustive;
-    }
+// Mapping of shift codes to their visual properties (emoji and CSS class)
+const SHIFT_VISUALS: Record<ShiftType, { emoji: string; className: string }> = {
+  M: { emoji: "🌅", className: "shift-morning" },
+  L: { emoji: "🌆", className: "shift-late" },
+  N: { emoji: "🌙", className: "shift-night" },
+  D: { emoji: "☀️", className: "shift-day" },
+  O: { emoji: "🏠", className: "shift-off" },
+};
+
+/**
+ * Retrieve a shift definition for a given shift code and schedule.
+ *
+ * @param code - Shift code to look up (M, L, N, D, or O)
+ * @param scheduleOption - Schedule type to look up the shift in
+ * @returns The matching shift object for the schedule
+ * @throws {Error} If the shift code is not defined in the schedule's shiftTimes
+ */
+export const getShift = (code: ShiftType, scheduleOption: ScheduleOption): Shift => {
+  const definition = getShiftTimeDefinition(scheduleOption, code);
+  const visuals = SHIFT_VISUALS[code];
+
+  if (!definition) {
+    throw new Error(
+      `Missing shiftTimes definition for code="${code}" in schedule="${scheduleOption}". ` +
+        `Ensure all shift codes used in the schedule pattern are defined in shiftTimes.`,
+    );
   }
+
+  return buildShift(code, definition, visuals.emoji, visuals.className);
 };
 
 /**
@@ -238,96 +250,21 @@ const getCycleTeamOffsetDays = (scheduleOption?: NullableScheduleOption, teamNum
 };
 
 /**
- * Combine a shift's emoji and name into a single display label.
+ * Format shift time with localization.
  *
- * @param shift - The shift object whose emoji and name will be used
- * @returns The display string in the form "`<emoji> <name>`"
- */
-export function getShiftDisplayName(shift: ShiftOrUnknown): string {
-  return `${shift.emoji} ${shift.name}`;
-}
-
-/**
- * Get roster-specific display properties for a shift.
+ * Returns localized shift time (e.g., "7:00 AM - 3:00 PM" or "07:00-15:00") when the shift
+ * has valid start and end times. Returns "Not working" for off shifts (start/end are null).
  *
- * Returns the shift's display name and hours, applying roster-specific overrides if configured.
- * For example, the 5-shift roster displays "Evening" for L shifts, while 2-shift displays "Late".
- *
- * @param shift - The shift object to get display properties for
- * @param scheduleOption - Optional schedule type; defaults to 5-shift if not provided
- * @returns Object containing displayName and displayHours (may be overridden by roster config)
- *
- * @example
- * // 5-shift roster: L shift shows as "Evening"
- * const display = getShiftDisplay(SHIFTS.LATE, "5-shift");
- * // Returns: { displayName: "Evening", displayHours: "15:00-23:00" }
- *
- * @example
- * // 2-shift roster: M shift shows as "Early"
- * const display = getShiftDisplay(SHIFTS.MORNING, "2-shift");
- * // Returns: { displayName: "Early", displayHours: "07:00-15:00" }
- */
-export function getShiftDisplay(
-  shift: ShiftOrUnknown,
-  scheduleOption?: NullableScheduleOption,
-): { displayName: string; displayHours: string; displayCode: string } {
-  const schedule = getScheduleForOption(scheduleOption);
-  const override =
-    schedule.shiftConfig.shiftDisplayOverrides?.[
-      shift.code as keyof typeof schedule.shiftConfig.shiftDisplayOverrides
-    ];
-
-  return {
-    displayName: override?.displayName ?? shift.name,
-    displayHours: override?.displayHours ?? shift.hours,
-    displayCode: override?.displayCode ?? shift.code,
-  };
-}
-
-/**
- * Format shift time with localization, falling back to display hours when localization is unavailable.
- *
- * Returns localized shift time (e.g., "7:00 AM - 3:00 PM") when the shift has valid start and end
- * times. If the shift start/end are null or invalid, or if localization fails, it falls back to the
- * roster-specific display hours from shift display overrides. This ensures consistent shift time
- * formatting across the app.
- *
- * @param shift - Shift object with code, start, and end times
- * @param scheduleOption - Schedule option used to resolve display overrides
+ * @param shift - Shift object with start and end times
  * @param timeFormat - Time format preference ("12h" or "24h")
- * @returns Formatted shift time string
+ * @returns Formatted shift time string, or "Not working" for off shifts
  */
 export function getFormattedShiftTime(
-  shift: ShiftOrUnknown,
-  scheduleOption: NullableScheduleOption,
+  shift: { start: number | null; end: number | null },
   timeFormat: "12h" | "24h",
 ): string {
-  const { displayHours } = getShiftDisplay(shift, scheduleOption);
-  return shift.start != null && shift.end != null
-    ? (getLocalizedShiftTime(shift.start, shift.end, timeFormat) ?? displayHours)
-    : displayHours;
-}
-
-/**
- * Retrieve a shift definition for a given shift code, returning an 'Unknown' shift object when no match is found.
- *
- * @param code - Shift code to look up; may be null or undefined
- * @returns The matching shift object from `SHIFTS`, or a fallback object with code `'U'`, emoji `❓`, name `'Unknown'`, non-working flags and null times when no match exists
- */
-export function getShiftByCode(code: string | null | undefined): ShiftOrUnknown {
-  const shift = Object.values(SHIFTS).find((s) => s.code === code);
-  return (
-    shift || {
-      code: "U",
-      emoji: "❓",
-      name: "Unknown",
-      hours: "Unknown hours",
-      start: null,
-      end: null,
-      isWorking: false,
-      className: "shift-off",
-    }
-  );
+  if (shift.start == null || shift.end == null) return "Not working";
+  return getLocalizedShiftTime(shift.start, shift.end, timeFormat) ?? "Not working";
 }
 
 /**
@@ -348,12 +285,12 @@ export function getShiftByCode(code: string | null | undefined): ShiftOrUnknown 
  * @example
  * // Get Team 1's shift on a specific date
  * calculateShift('2025-01-06', 1)
- * // Returns: { code: 'M', name: 'Morning', hours: '07:00-15:00', ... }
+ * // Returns: { code: 'M', displayCode: "M", name: 'Morning', ... }
  *
  * @example
  * // Using a Date object
  * calculateShift(new Date('2025-01-08'), 1)
- * // Returns: { code: 'E', name: 'Evening', hours: '15:00-23:00', ... }
+ * // Returns: { code: 'E', displayCode: "E", name: 'Evening', ... }
  *
  * @example
  * // Invalid team number throws error
@@ -384,28 +321,29 @@ export function calculateShift(
   const teamOffset = getCycleTeamOffsetDays(scheduleOption, teamNumber);
   const adjustedDays = daysSinceReference - teamOffset;
   const cyclePosition = ((adjustedDays % cycleLength) + cycleLength) % cycleLength;
-  const dayIndex = cyclePosition + 1;
-  const matchingDay = schedulePattern.days.find((day) => day.dayIndex === dayIndex);
-  if (!matchingDay) {
+  const shiftCode = schedulePattern[cyclePosition];
+  if (!shiftCode) {
     // This indicates a likely configuration error: the schedulePattern is missing
-    // an entry for the computed dayIndex. We keep the existing behavior of
-    // returning SHIFTS.OFF but emit a warning to aid diagnosis.
+    // an entry for the computed cycle position. Fall back to the schedule's OFF
+    // shift definition to ensure consistent field population.
     console.warn(
-      `[shiftCalculations] Missing schedulePattern day for dayIndex=${dayIndex} (cyclePosition=${cyclePosition}, cycleLength=${cycleLength}, teamNumber=${teamNumber}, schedule=${schedule.value}). Falling back to SHIFTS.OFF.`,
+      `[shiftCalculations] Missing schedulePattern day for cyclePosition=${cyclePosition} (cycleLength=${cycleLength}, teamNumber=${teamNumber}, schedule=${schedule.value}). Falling back to OFF shift.`,
     );
-    return SHIFTS.OFF;
+    return getShift("O", schedule.value);
   }
-  return mapShiftCodeToShift(matchingDay.shift);
+  return getShift(shiftCode, schedule.value);
 }
 
 /**
- * Map a timestamp to the shift's effective day, assigning times before 07:00 to the previous calendar day.
+ * Map a timestamp to the shift's effective day, assigning times before 07:00 to the previous calendar day
+ * only for schedules that include night shifts.
  *
  * This is critical for night shift handling: since night shifts run from 23:00 to 07:00,
  * any time between 00:00 and 06:59 belongs to the previous day's night shift.
  *
  * @param date - The date or timestamp to evaluate
- * @returns The Dayjs representing the shift day (the previous day if `date` is before 07:00)
+ * @param scheduleOption - Optional schedule type; defaults to night-shift behavior when omitted
+ * @returns The Dayjs representing the shift day (the previous day if `date` is before 07:00 and the schedule has night shifts)
  *
  * @example
  * // During morning hours (7am or later) - same day
@@ -417,12 +355,18 @@ export function calculateShift(
  * getCurrentShiftDay('2025-01-15 02:30')
  * // Returns: Dayjs for 2025-01-14 (previous day's night shift)
  */
-export function getCurrentShiftDay(date: string | Date | Dayjs): Dayjs {
+export function getCurrentShiftDay(
+  date: string | Date | Dayjs,
+  scheduleOption?: NullableScheduleOption,
+): Dayjs {
   const current = dayjs(date);
   const hour = current.hour();
+  const usesNightShift = scheduleOption == null || scheduleHasNightShift(scheduleOption);
 
-  // If it's before 7 AM, we're in the previous day's night shift
-  if (hour < 7) {
+  // Schedules with night shifts keep the legacy 07:00 cutoff because the shift day
+  // is anchored to the prior calendar day. Schedules without night shifts should
+  // follow the calendar day without adjustment.
+  if (usesNightShift && hour < 7) {
     return current.subtract(1, "day");
   }
 
@@ -604,7 +548,7 @@ export function getOffDayProgress(
 
   // Find the start of the current off-day period by looking backwards
   let periodStartDate: Dayjs | null = null;
-  let checkDate = getCurrentShiftDay(dayjs(date));
+  let checkDate = getCurrentShiftDay(dayjs(date), scheduleOption);
 
   for (let i = 0; i < cycleLength; i++) {
     const tempDate = checkDate.subtract(i, "day");
@@ -636,7 +580,7 @@ export function getOffDayProgress(
   // Calculate which day of the off period we're currently in
   let dayCount = 0;
   if (totalOffDays && periodStartDate) {
-    const currentShiftDay = getCurrentShiftDay(dayjs(date));
+    const currentShiftDay = getCurrentShiftDay(dayjs(date), scheduleOption);
     // Direct calculation is simpler and more performant than a loop
     dayCount = currentShiftDay.diff(periodStartDate, "day") + 1;
   }
@@ -660,14 +604,15 @@ export function isCurrentlyWorking(
   shift: { code: string; start: number | null; end: number | null },
   date: Dayjs,
   currentTime: Dayjs,
+  scheduleOption?: NullableScheduleOption,
 ): boolean {
   // Explicitly check for null/undefined to handle midnight (0) as a valid start time
   if (shift.start == null || shift.end == null) return false;
 
-  const shiftDay = getCurrentShiftDay(currentTime);
+  const shiftDay = getCurrentShiftDay(currentTime, scheduleOption);
   if (!shiftDay.isSame(date, "day")) return false;
 
-  const hour = currentTime.hour();
+  const hour = currentTime.hour() + currentTime.minute() / 60;
 
   // Detect shifts spanning midnight by comparing start/end hours (more robust than checking shift code)
   if (shift.start > shift.end) {
@@ -704,7 +649,7 @@ export function getCurrentWorkingTeam(
   const allTeamsToday = getAllTeamsShifts(today, scheduleType);
   const workingToday = allTeamsToday.find((teamShift) => {
     if (!teamShift.shift.isWorking) return false;
-    return isCurrentlyWorking(teamShift.shift, teamShift.date, currentTime);
+    return isCurrentlyWorking(teamShift.shift, teamShift.date, currentTime, scheduleType);
   });
 
   if (workingToday) return workingToday;
@@ -714,7 +659,7 @@ export function getCurrentWorkingTeam(
   const allTeamsYesterday = getAllTeamsShifts(yesterday, scheduleType);
   const workingYesterday = allTeamsYesterday.find((teamShift) => {
     if (!teamShift.shift.isWorking) return false;
-    return isCurrentlyWorking(teamShift.shift, teamShift.date, currentTime);
+    return isCurrentlyWorking(teamShift.shift, teamShift.date, currentTime, scheduleType);
   });
 
   return workingYesterday || null;

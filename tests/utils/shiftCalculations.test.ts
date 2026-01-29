@@ -7,8 +7,9 @@ import {
   getCurrentShiftDay,
   getNextShift,
   getOffDayProgress,
-  getShiftByCode,
+  getShift,
   getShiftCode,
+  isCurrentlyWorking,
   SHIFTS,
 } from "../../src/utils/shiftCalculations";
 
@@ -18,7 +19,7 @@ describe("Shift Calculations", () => {
       // Reference: Team 1 on 2025-07-16 should be in morning shift (cycle start)
       const referenceDate = new Date("2025-07-16");
       const shift = calculateShift(referenceDate, 1);
-      expect(shift).toBe(SHIFTS.MORNING);
+      expect(shift).toStrictEqual(getShift("M", "5-shift"));
     });
 
     it("should calculate different shifts for different teams on same date", () => {
@@ -59,7 +60,7 @@ describe("Shift Calculations", () => {
 
       // Verify Team 1 has morning shift on reference date with 5-shift schedule
       const shift = calculateShift(referenceDate, 1, "5-shift");
-      expect(shift).toBe(SHIFTS.MORNING);
+      expect(shift).toStrictEqual(getShift("M", "5-shift"));
     });
   });
 
@@ -134,6 +135,45 @@ describe("Shift Calculations", () => {
     });
   });
 
+  describe("getCurrentShiftDay with schedule awareness", () => {
+    it("should use previous day before 7 AM for 5-shift schedule", () => {
+      const testDate = dayjs("2025-07-16 06:00");
+      const shiftDay = getCurrentShiftDay(testDate, "5-shift");
+      const expectedDay = testDate.subtract(1, "day");
+      expect(shiftDay.isSame(expectedDay, "day")).toBe(true);
+    });
+
+    it("should use current day before 7 AM for schedules without night shifts", () => {
+      const testDate = dayjs("2025-07-16 06:00");
+      const schedules = ["9-5", "2-shift", "weekend-shift"] as const;
+
+      schedules.forEach((schedule) => {
+        const shiftDay = getCurrentShiftDay(testDate, schedule);
+        expect(shiftDay.isSame(testDate, "day")).toBe(true);
+      });
+    });
+
+    it("should default to night-shift behavior when schedule is omitted", () => {
+      const testDate = dayjs("2025-07-16 06:00");
+      const shiftDay = getCurrentShiftDay(testDate);
+      const expectedDay = testDate.subtract(1, "day");
+      expect(shiftDay.isSame(expectedDay, "day")).toBe(true);
+    });
+
+    it("should return current day after 7 AM for all schedules", () => {
+      const testDate = dayjs("2025-07-16 08:00");
+      const schedules = ["5-shift", "9-5", "2-shift", "weekend-shift"] as const;
+
+      schedules.forEach((schedule) => {
+        const shiftDay = getCurrentShiftDay(testDate, schedule);
+        expect(shiftDay.isSame(testDate, "day")).toBe(true);
+      });
+
+      const defaultShiftDay = getCurrentShiftDay(testDate);
+      expect(defaultShiftDay.isSame(testDate, "day")).toBe(true);
+    });
+  });
+
   describe("Night shift midnight crossing consistency", () => {
     it("should have consistent shift calculation and code for night shifts crossing midnight", () => {
       // Test at 2 AM during a night shift (using date with known night shift)
@@ -195,6 +235,35 @@ describe("Shift Calculations", () => {
 
       // The fix ensures we show Friday's schedule, not Thursday's
       expect(team2Friday.code).not.toBe(team2ShiftDay.code);
+    });
+  });
+
+  describe("isCurrentlyWorking with schedule awareness", () => {
+    it("should avoid legacy cutoff for non-night schedules before 7 AM", () => {
+      const shift = getShift("N", "5-shift");
+      const date = dayjs("2025-01-12");
+      const currentTime = dayjs("2025-01-13 06:00");
+
+      const working = isCurrentlyWorking(shift, date, currentTime, "9-5");
+      expect(working).toBe(false);
+    });
+
+    it("should treat pre-7AM as previous day for night-shift schedules", () => {
+      const shift = getShift("N", "5-shift");
+      const date = dayjs("2025-07-19");
+      const currentTime = dayjs("2025-07-20 06:00");
+
+      const working = isCurrentlyWorking(shift, date, currentTime, "5-shift");
+      expect(working).toBe(true);
+    });
+
+    it("should preserve legacy behavior when schedule option is omitted", () => {
+      const shift = getShift("N", "5-shift");
+      const date = dayjs("2025-07-19");
+      const currentTime = dayjs("2025-07-20 06:00");
+
+      const working = isCurrentlyWorking(shift, date, currentTime);
+      expect(working).toBe(true);
     });
   });
 });
@@ -271,46 +340,44 @@ describe("SHIFTS Constant Validation", () => {
   it("should have properly defined SHIFTS constants", () => {
     expect(SHIFTS.MORNING.code).toBe("M");
     expect(SHIFTS.MORNING.emoji).toBe("🌅");
-    expect(SHIFTS.MORNING.name).toBe("Morning");
-    expect(SHIFTS.MORNING.hours).toBe("07:00-15:00");
-    expect(SHIFTS.MORNING.start).toBe(7);
-    expect(SHIFTS.MORNING.end).toBe(15);
+    expect(SHIFTS.MORNING.name).toBe("");
+    expect(SHIFTS.MORNING.start).toBe(null);
+    expect(SHIFTS.MORNING.end).toBe(null);
     expect(SHIFTS.MORNING.isWorking).toBe(true);
     expect(SHIFTS.MORNING.className).toBe("shift-morning");
 
     expect(SHIFTS.LATE.code).toBe("L");
     expect(SHIFTS.LATE.emoji).toBe("🌆");
-    expect(SHIFTS.LATE.name).toBe("Late");
-    expect(SHIFTS.LATE.hours).toBe("15:00-23:00");
-    expect(SHIFTS.LATE.start).toBe(15);
-    expect(SHIFTS.LATE.end).toBe(23);
+    expect(SHIFTS.LATE.name).toBe("");
+    expect(SHIFTS.LATE.start).toBe(null);
+    expect(SHIFTS.LATE.end).toBe(null);
     expect(SHIFTS.LATE.isWorking).toBe(true);
     expect(SHIFTS.LATE.className).toBe("shift-late");
 
     expect(SHIFTS.NIGHT.code).toBe("N");
     expect(SHIFTS.NIGHT.emoji).toBe("🌙");
-    expect(SHIFTS.NIGHT.name).toBe("Night");
-    expect(SHIFTS.NIGHT.hours).toBe("23:00-07:00");
-    expect(SHIFTS.NIGHT.start).toBe(23);
-    expect(SHIFTS.NIGHT.end).toBe(7);
+    expect(SHIFTS.NIGHT.name).toBe("");
+    expect(SHIFTS.NIGHT.start).toBe(null);
+    expect(SHIFTS.NIGHT.end).toBe(null);
     expect(SHIFTS.NIGHT.isWorking).toBe(true);
     expect(SHIFTS.NIGHT.className).toBe("shift-night");
 
     expect(SHIFTS.OFF.code).toBe("O");
     expect(SHIFTS.OFF.emoji).toBe("🏠");
-    expect(SHIFTS.OFF.name).toBe("Off");
-    expect(SHIFTS.OFF.hours).toBe("Not working");
+    expect(SHIFTS.OFF.name).toBe("");
     expect(SHIFTS.OFF.start).toBe(null);
     expect(SHIFTS.OFF.end).toBe(null);
     expect(SHIFTS.OFF.isWorking).toBe(false);
     expect(SHIFTS.OFF.className).toBe("shift-off");
   });
 
-  it("should handle null and undefined inputs in getShiftByCode", () => {
-    expect(getShiftByCode(null).className).toBe("shift-off");
-    expect(getShiftByCode(undefined).className).toBe("shift-off");
-    expect(getShiftByCode("").className).toBe("shift-off");
-    expect(getShiftByCode("invalid").className).toBe("shift-off");
+  it("should throw error for invalid inputs in getShift", () => {
+    // getShift now requires valid ShiftType and ScheduleOption - throws for invalid inputs
+    expect(() => getShift("invalid" as "M", "5-shift")).toThrow();
+    expect(() => getShift("" as "M", "5-shift")).toThrow();
+    // Valid inputs should work
+    expect(getShift("M", "5-shift").className).toBe("shift-morning");
+    expect(getShift("O", "5-shift").className).toBe("shift-off");
   });
 
   it("should have immutable SHIFTS object", () => {
@@ -375,7 +442,7 @@ describe("Roster Configuration Integration Tests", () => {
     const referenceTeam = fiveShiftRoster?.shiftConfig.referenceTeam ?? 1;
 
     const referenceShift = calculateShift(referenceDate, referenceTeam, "5-shift");
-    expect(referenceShift).toBe(SHIFTS.MORNING);
+    expect(referenceShift).toStrictEqual(getShift("M", "5-shift"));
   });
 
   it("should respect roster-specific cycle length", () => {
@@ -523,7 +590,6 @@ describe("Type Safety and Interface Compliance", () => {
     // Check all required properties exist and have correct types
     expect(typeof shift.code).toBe("string");
     expect(typeof shift.name).toBe("string");
-    expect(typeof shift.hours).toBe("string");
     expect(typeof shift.isWorking).toBe("boolean");
 
     // start and end can be number or null
@@ -544,7 +610,6 @@ describe("Type Safety and Interface Compliance", () => {
       // Verify shift object structure
       expect(typeof result.shift.code).toBe("string");
       expect(typeof result.shift.name).toBe("string");
-      expect(typeof result.shift.hours).toBe("string");
       expect(typeof result.shift.isWorking).toBe("boolean");
     });
   });
@@ -561,7 +626,6 @@ describe("Type Safety and Interface Compliance", () => {
       // Verify shift object structure
       expect(typeof nextShift.shift.code).toBe("string");
       expect(typeof nextShift.shift.name).toBe("string");
-      expect(typeof nextShift.shift.hours).toBe("string");
       expect(typeof nextShift.shift.isWorking).toBe("boolean");
     }
   });
@@ -713,6 +777,47 @@ describe("getOffDayProgress Function Tests", () => {
 
     // Restore console.warn
     consoleWarnSpy.mockRestore();
+  });
+
+  describe("schedule-aware day boundaries", () => {
+    it("should return null for 9-5 schedule at 06:00 on a working Monday", () => {
+      const mondayMorning = dayjs("2025-01-13 06:00");
+      const progress = getOffDayProgress(mondayMorning, 1, "9-5");
+      expect(progress).toBeNull();
+    });
+
+    it("should return weekend off-day progress for 9-5 schedule at 06:00 on Saturday", () => {
+      const saturdayMorning = dayjs("2025-01-11 06:00");
+      const progress = getOffDayProgress(saturdayMorning, 1, "9-5");
+
+      expect(progress).not.toBeNull();
+      if (progress) {
+        expect(progress.total).toBe(2);
+        expect(progress.current).toBe(1);
+      }
+    });
+
+    it("should return weekend off-day progress for 2-shift schedule at 06:00 on Sunday", () => {
+      const sundayMorning = dayjs("2025-01-12 06:00");
+      const progress = getOffDayProgress(sundayMorning, 1, "2-shift");
+
+      expect(progress).not.toBeNull();
+      if (progress) {
+        expect(progress.total).toBe(2);
+        expect(progress.current).toBe(2);
+      }
+    });
+
+    it("should treat midnight as the same day for non-night schedules", () => {
+      const saturdayMidnight = dayjs("2025-01-11 00:30");
+      const progress = getOffDayProgress(saturdayMidnight, 1, "9-5");
+
+      expect(progress).not.toBeNull();
+      if (progress) {
+        expect(progress.total).toBe(2);
+        expect(progress.current).toBe(1);
+      }
+    });
   });
 
   describe("Weekly-rotation schedule off-day progress", () => {

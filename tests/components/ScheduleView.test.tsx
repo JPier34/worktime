@@ -8,6 +8,23 @@ import { SettingsProvider } from "../../src/contexts/SettingsContext";
 import { ToastProvider } from "../../src/contexts/ToastContext";
 import { dayjs } from "../../src/utils/dateTimeUtils";
 
+// Mock useSettings to provide scheduleType
+vi.mock("../../src/contexts/SettingsContext", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/contexts/SettingsContext")>();
+  return {
+    ...actual,
+    useSettings: vi.fn(() => ({
+      settings: {
+        timeFormat: "24h",
+        theme: "auto",
+        notifications: "off",
+        vacationAllowance: { amount: 0, unit: "days", hoursPerDay: 8 },
+      },
+      scheduleType: "5-shift",
+    })),
+  };
+});
+
 // Mock the dependencies
 vi.mock("../../src/hooks/useKeyboardShortcuts", () => ({
   useKeyboardShortcuts: vi.fn(),
@@ -57,27 +74,23 @@ vi.mock("../../src/utils/dateTimeUtils", () => {
 vi.mock("../../src/utils/shiftCalculations", () => ({
   calculateShift: vi.fn(() => ({
     code: "M",
+    displayCode: "M",
     emoji: "🌅",
     name: "Morning",
-    hours: "07:00-15:00",
     start: 7,
     end: 15,
     isWorking: true,
     className: "shift-morning",
   })),
-  getShiftByCode: vi.fn(() => ({
+  getShift: vi.fn(() => ({
     code: "M",
+    displayCode: "M",
     emoji: "🌅",
     name: "Morning",
-    hours: "07:00-15:00",
     start: 7,
     end: 15,
     isWorking: true,
     className: "shift-morning",
-  })),
-  getShiftDisplay: vi.fn(() => ({
-    displayName: "Morning",
-    displayHours: "07:00-15:00",
   })),
 }));
 

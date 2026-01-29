@@ -130,28 +130,76 @@ export function formatTimeByPreference(dayjsObj: dayjs.Dayjs, timeFormat: "12h" 
 /**
  * Produce a localized time representation for a shift start, end, or range.
  *
- * Formats times according to `timeFormat`. When both `start` and `end` are provided returns a range joined with an en dash (e.g. "07:00–15:00" or "7:00 AM–3:00 PM"). If only one is provided returns that time. Special-case: an `end` value of `0` is rendered as "24:00" for `24h` or "12:00 AM" for `12h`.
+ * Formats times according to `timeFormat`. When both `start` and `end` are provided returns a range joined with an en dash (e.g. "07:00–15:00" or "7:00 AM–3:00 PM"). If only one is provided returns that time. Special-case: an `end` value of `0` or a computed time of `24:00` is rendered as "24:00" for `24h` or "12:00 AM" for `12h`.
  *
  * @param start - Start hour (0–23) or `null`
  * @param end - End hour (0–23) or `null`
  * @param timeFormat - Either `"12h"` or `"24h"` to control formatting style
  * @returns The formatted time string or `null` if neither `start` nor `end` is provided
  */
+/**
+ * Splits a fractional hour value into hours and minutes components.
+ *
+ * @param hourValue - A fractional hour value (e.g., 6.5 for 06:30, 14.5 for 14:30)
+ * @returns An object with `hours` (integer 0-24) and `minutes` (integer 0-59)
+ *
+ * @example
+ * splitFractionalHour(6.5)   // { hours: 6, minutes: 30 }
+ * splitFractionalHour(14.25) // { hours: 14, minutes: 15 }
+ * splitFractionalHour(7)     // { hours: 7, minutes: 0 }
+ */
+export const splitFractionalHour = (hourValue: number): { hours: number; minutes: number } => {
+  const wholeHours = Math.floor(hourValue);
+  const minutes = Math.round((hourValue - wholeHours) * 60);
+  const adjustedHours = minutes === 60 ? wholeHours + 1 : wholeHours;
+  const adjustedMinutes = minutes === 60 ? 0 : minutes;
+  return { hours: adjustedHours, minutes: adjustedMinutes };
+};
+
+/**
+ * Creates a dayjs object with the time set from a fractional hour value.
+ *
+ * This correctly handles fractional hours like 6.5 (06:30) or 14.5 (14:30)
+ * by splitting the value into hours and minutes instead of truncating.
+ *
+ * @param date - The base dayjs date to set the time on
+ * @param fractionalHour - A fractional hour value (e.g., 6.5 for 06:30)
+ * @returns A new dayjs object with the time set from the fractional hour
+ *
+ * @example
+ * setTimeFromFractionalHour(dayjs(), 6.5)  // Sets time to 06:30:00
+ * setTimeFromFractionalHour(dayjs(), 14.5) // Sets time to 14:30:00
+ * setTimeFromFractionalHour(dayjs(), 7)    // Sets time to 07:00:00
+ */
+export const setTimeFromFractionalHour = (
+  date: dayjs.Dayjs,
+  fractionalHour: number,
+): dayjs.Dayjs => {
+  const { hours, minutes } = splitFractionalHour(fractionalHour);
+  return date.hour(hours).minute(minutes).second(0);
+};
+
 export function getLocalizedShiftTime(
   start: number | null,
   end: number | null,
   timeFormat: "12h" | "24h",
 ): string | null {
   if (start == null && end == null) return null;
-  const format = (hour: number) =>
-    formatTimeByPreference(dayjs().hour(hour).minute(0).second(0), timeFormat);
+  const formatMidnight = () => (timeFormat === "24h" ? "24:00" : "12:00 AM");
+  const format = (hour: number) => {
+    const { hours, minutes } = splitFractionalHour(hour);
+    if (hours === 24 && minutes === 0) {
+      return formatMidnight();
+    }
+    return formatTimeByPreference(dayjs().hour(hours).minute(minutes).second(0), timeFormat);
+  };
   if (start != null && end != null) {
     const startTime = format(start);
-    const endTime = end === 0 ? (timeFormat === "24h" ? "24:00" : "12:00 AM") : format(end);
+    const endTime = end === 0 ? formatMidnight() : format(end);
     return `${startTime}–${endTime}`;
   }
   if (start != null) return format(start);
-  if (end != null) return end === 0 ? (timeFormat === "24h" ? "24:00" : "12:00 AM") : format(end);
+  if (end != null) return end === 0 ? formatMidnight() : format(end);
   return null;
 }
 
