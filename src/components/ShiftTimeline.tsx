@@ -110,6 +110,19 @@ function computeShiftTimeline(
   };
 }
 
+/**
+ * Check if multiple teams have the same shift start time (parallel shifts)
+ * @param teams Array of ShiftResult objects
+ * @returns true if teams work simultaneously (same start time), false if sequential
+ */
+function hasTeamsWithSameStartTime(teams: ShiftResult[]): boolean {
+  if (teams.length <= 1) return false;
+  
+  const startTimes = new Set(teams.map(t => t.shift.start || 0));
+  // If number of teams > number of unique start times, there are parallel shifts
+  return teams.length > startTimes.size;
+}
+
 interface ShiftTimelineProps {
   currentWorkingTeam: ShiftResult;
   today: Dayjs;
@@ -136,6 +149,18 @@ export function ShiftTimeline({ currentWorkingTeam, today }: ShiftTimelineProps)
 
   const { prevShift, nextShift } = computeShiftTimeline(today, currentWorkingTeam, scheduleType);
 
+    // Detect single-team schedules and return null (no timeline needed)
+  const allTeamsToday = getAllTeamsShifts(today, scheduleType);
+  const workingTeams = allTeamsToday.filter(team => team.shift.isWorking);
+  const teamCount = workingTeams.length;
+
+  // Scenario 1: Single-team schedule - hide timeline
+  if (teamCount === 1) {
+    return null;
+  }
+
+  // Scenario 2: Check for parallel shifts (teams with same start time)
+  const hasParallelShifts = hasTeamsWithSameStartTime(workingTeams);
   return (
     <div className="card-timeline timeline-container">
       <div className="timeline-header text-center">
@@ -151,7 +176,7 @@ export function ShiftTimeline({ currentWorkingTeam, today }: ShiftTimelineProps)
             <div className="timeline-code">{prevShift.shift.displayCode}</div>
           </div>
         )}
-        {prevShift && <span className="timeline-arrow">→</span>}
+        {prevShift && !hasParallelShifts &&  <span className="timeline-arrow">→</span>}
         <div className="timeline-team">
           <OverlayTrigger
             placement="bottom"
@@ -191,7 +216,7 @@ export function ShiftTimeline({ currentWorkingTeam, today }: ShiftTimelineProps)
             </OverlayTrigger>
           </div>
         </div>
-        {nextShift && <span className="timeline-arrow">→</span>}
+        {nextShift && !hasParallelShifts && <span className="timeline-arrow">→</span>}
         {nextShift && (
           <div className="timeline-team">
             <Badge bg="light" text="dark" className="timeline-badge">
