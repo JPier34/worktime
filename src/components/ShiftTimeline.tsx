@@ -118,7 +118,7 @@ function computeShiftTimeline(
 function hasTeamsWithSameStartTime(teams: ShiftResult[]): boolean {
   if (teams.length <= 1) return false;
   
-  const startTimes = new Set(teams.map(t => t.shift.start || 0));
+  const startTimes = new Set(teams.map(t => t.shift.start!));
   // If number of teams > number of unique start times, there are parallel shifts
   return teams.length > startTimes.size;
 }
