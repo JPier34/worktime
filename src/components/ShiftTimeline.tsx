@@ -149,7 +149,7 @@ export function ShiftTimeline({ currentWorkingTeam, today }: ShiftTimelineProps)
 
   const { prevShift, nextShift } = computeShiftTimeline(today, currentWorkingTeam, scheduleType);
 
-    // Detect single-team schedules and return null (no timeline needed)
+  // Detect single-team schedules and return null (no timeline needed)
   const allTeamsToday = getAllTeamsShifts(today, scheduleType);
   const workingTeams = allTeamsToday.filter(team => team.shift.isWorking);
   const teamCount = workingTeams.length;
