@@ -176,7 +176,7 @@ export function ShiftTimeline({ currentWorkingTeam, today }: ShiftTimelineProps)
             <div className="timeline-code">{prevShift.shift.displayCode}</div>
           </div>
         )}
-        {prevShift && !hasParallelShifts &&  <span className="timeline-arrow">→</span>}
+        {prevShift && !hasParallelShifts && <span className="timeline-arrow">→</span>}
         <div className="timeline-team">
           <OverlayTrigger
             placement="bottom"
