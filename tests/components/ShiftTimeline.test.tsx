@@ -64,40 +64,22 @@ const createMockShiftResult = (
   },
 });
 
-// Mock getAllTeamsShifts for testing single-team scenarios
-vi.mock("../../src/utils/shiftCalculations", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../src/utils/shiftCalculations")>();
-  return {
-    ...actual,
-    getAllTeamsShifts: vi.fn((_shiftDay, _scheduleOption) => {
-      // Return a single team for testing
-      return [createMockShiftResult(1, "M", dayjs("2025-01-15"))];
-    }),
-  };
-});
-
 describe("ShiftTimeline", () => {
   const today = dayjs("2025-01-15"); // Wednesday
 
   it("renders timeline header", () => {
     const currentWorkingTeam = createMockShiftResult(1, "M", today);
-
     renderWithProviders(<ShiftTimeline currentWorkingTeam={currentWorkingTeam} today={today} />);
-
     expect(screen.getByText("Today's Shift Timeline")).toBeInTheDocument();
-    expect(document.querySelector(".bi-clock")).toBeInTheDocument(); // Bootstrap icon
+    expect(document.querySelector(".bi-clock")).toBeInTheDocument();
   });
 
   it("displays current working team with active indicator", () => {
     const currentWorkingTeam = createMockShiftResult(3, "L", today);
-
     const { container } = renderWithProviders(
       <ShiftTimeline currentWorkingTeam={currentWorkingTeam} today={today} />,
     );
-
     expect(screen.getByText("T3")).toBeInTheDocument();
-
-    // Find the current working team badge specifically
     const currentBadge = container.querySelector(".timeline-current-badge");
     expect(currentBadge).toBeInTheDocument();
     expect(currentBadge?.textContent).toBe("T3");
@@ -105,9 +87,7 @@ describe("ShiftTimeline", () => {
 
   it("applies timeline-current-badge class to current team", () => {
     const currentWorkingTeam = createMockShiftResult(2, "N", today);
-
     renderWithProviders(<ShiftTimeline currentWorkingTeam={currentWorkingTeam} today={today} />);
-
     const currentBadge = document.querySelector(".timeline-current-badge");
     expect(currentBadge).toBeInTheDocument();
     expect(currentBadge).toHaveTextContent("T2");
@@ -115,9 +95,7 @@ describe("ShiftTimeline", () => {
 
   it("applies correct shift styling classes", () => {
     const morningTeam = createMockShiftResult(1, "M", today);
-
     renderWithProviders(<ShiftTimeline currentWorkingTeam={morningTeam} today={today} />);
-
     const badge = screen.getByText("T1");
     expect(badge).toHaveClass("timeline-current-badge");
     expect(badge).toHaveClass("timeline-badge");
@@ -125,105 +103,65 @@ describe("ShiftTimeline", () => {
 
   it("renders timeline flow structure", () => {
     const currentWorkingTeam = createMockShiftResult(1, "M", today);
-
     const { container } = renderWithProviders(
       <ShiftTimeline currentWorkingTeam={currentWorkingTeam} today={today} />,
     );
-
     expect(container.querySelector(".timeline-flow")).toBeInTheDocument();
     expect(container.querySelector(".timeline-team")).toBeInTheDocument();
   });
 
   it("handles different shift codes correctly", () => {
     const nightTeam = createMockShiftResult(5, "N", today);
-
     const { container } = renderWithProviders(
       <ShiftTimeline currentWorkingTeam={nightTeam} today={today} />,
     );
-
     expect(screen.getByText("T5")).toBeInTheDocument();
-
-    // Find the current working team badge specifically
     const currentBadge = container.querySelector(".timeline-current-badge");
     expect(currentBadge).toBeInTheDocument();
     expect(currentBadge?.textContent).toBe("T5");
   });
 
-    // Tests for single-team and parallel shift scenarios (#119)
-    it("hides timeline for single-team schedules (teamCount === 1)", () => {
-          const currentWorkingTeam = createMockShiftResult(1, "M", today);
-          const { container } = renderWithProviders(
-                  <ShiftTimeline currentWorkingTeam={currentWorkingTeam} today={today} />,
-                );
-
-          // When there's only one team, ShiftTimeline should return null
-          // This means the card-timeline container should not be rendered
-          const timelineContainer = container.querySelector(".card-timeline");
-          expect(timelineContainer).not.toBeInTheDocument();
+  // Tests for single-team and parallel shift scenarios (#119)
+  it("hides timeline for single-team schedules (teamCount === 1)", () => {
+    vi.doMock("../../src/utils/shiftCalculations", async (importOriginal) => {
+      const actual = await importOriginal<typeof import("../../src/utils/shiftCalculations")>();
+      return {
+        ...actual,
+        getAllTeamsShifts: vi.fn(() => [createMockShiftResult(1, "M", today)]),
+      };
     });
 
-    it("shows timeline and hides arrows for parallel shifts (same start time)", () => {
-          // Mock the getAllTeamsShifts to return teams with same start time
-          // T1 (Morning: 7), T2 (Morning: 7) - parallel shifts
-          const currentWorkingTeam = createMockShiftResult(1, "M", today);
+    const currentWorkingTeam = createMockShiftResult(1, "M", today);
+    const { container } = renderWithProviders(
+      <ShiftTimeline currentWorkingTeam={currentWorkingTeam} today={today} />,
+    );
+    const timelineContainer = container.querySelector(".card-timeline");
+    expect(timelineContainer).not.toBeInTheDocument();
 
-          // Note: This test would ideally mock getAllTeamsShifts to return multiple teams
-          // with the same start time. The actual test would verify that arrows are hidden.
-          // For now, we're testing with a single team to ensure the component doesn't break.
-          renderWithProviders(
-                  <ShiftTimeline currentWorkingTeam={currentWorkingTeam} today={today} />,
-                );
+    vi.unmock("../../src/utils/shiftCalculations");
+  });
 
-          // The component should render without errors
-          expect(screen.getByText("Today's Shift Timeline")).toBeInTheDocument();
-    });
+  it("correctly detects parallel shifts using hasTeamsWithSameStartTime logic", () => {
+    const teamsWithSameStart = [
+      createMockShiftResult(1, "M", today), // start: 7
+      createMockShiftResult(2, "M", today), // start: 7
+      createMockShiftResult(3, "L", today), // start: 15
+    ];
+    const startTimes = new Set(teamsWithSameStart.map((t) => t.shift.start));
+    const hasParallelShifts = teamsWithSameStart.length > startTimes.size;
+    expect(hasParallelShifts).toBe(true);
+    expect(startTimes.size).toBe(2);
+  });
 
-    it("displays arrows for sequential shifts (different start times)", () => {
-          // When teams have different start times, arrows should be visible
-          const morningTeam = createMockShiftResult(1, "M", today);
-
-          renderWithProviders(
-                  <ShiftTimeline currentWorkingTeam={morningTeam} today={today} />,
-                );
-
-          expect(screen.getByText("Today's Shift Timeline")).toBeInTheDocument();
-          // The timeline should render with the current team visible
-          expect(screen.getByText("T1")).toBeInTheDocument();
-    });
-
-    it("correctly detects parallel shifts using hasTeamsWithSameStartTime logic", () => {
-          // This test validates the helper function logic:
-          // Teams with same start time should be detected as parallel shifts
-          const teamsWithSameStart = [
-                  createMockShiftResult(1, "M", today), // start: 7
-                  createMockShiftResult(2, "M", today), // start: 7
-                  createMockShiftResult(3, "L", today), // start: 15
-                ];
-
-          // Simulate the hasTeamsWithSameStartTime logic
-          const startTimes = new Set(teamsWithSameStart.map(t => t.shift.start));
-          const hasParallelShifts = teamsWithSameStart.length > startTimes.size;
-
-          // With 3 teams and 2 unique start times, we should detect parallel shifts
-          expect(hasParallelShifts).toBe(true);
-          expect(startTimes.size).toBe(2);
-    });
-
-    it("correctly identifies sequential shifts (no parallel shifts)", () => {
-          // Teams with different start times should NOT be detected as parallel shifts
-          const teamsWithDifferentStart = [
-                  createMockShiftResult(1, "M", today), // start: 7
-                  createMockShiftResult(2, "L", today), // start: 15
-                  createMockShiftResult(3, "N", today), // start: 23
-                ];
-
-          // Simulate the hasTeamsWithSameStartTime logic
-          const startTimes = new Set(teamsWithDifferentStart.map(t => t.shift.start));
-          const hasParallelShifts = teamsWithDifferentStart.length > startTimes.size;
-
-          // With 3 teams and 3 unique start times, no parallel shifts
-          expect(hasParallelShifts).toBe(false);
-          expect(startTimes.size).toBe(3);
-    });
-  
+  it("correctly identifies sequential shifts (no parallel shifts)", () => {
+    const teamsWithDifferentStart = [
+      createMockShiftResult(1, "M", today), // start: 7
+      createMockShiftResult(2, "L", today), // start: 15
+      createMockShiftResult(3, "N", today), // start: 23
+    ];
+    const startTimes = new Set(teamsWithDifferentStart.map((t) => t.shift.start));
+    const hasParallelShifts = teamsWithDifferentStart.length > startTimes.size;
+    expect(hasParallelShifts).toBe(false);
+    expect(startTimes.size).toBe(3);
+  });
 });
