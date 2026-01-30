@@ -47,7 +47,7 @@ export function PersonalizedStatusContent({
   const teamTooltipId = useId();
 
   const scheduleConfig = getScheduleConfig(scheduleType);
-  const hasTeams = scheduleConfig.showsTeamSelection;
+  const hasTeams = scheduleConfig.shiftConfig.teamCount > 1;
 
   const today = dayjs();
   const todayMinuteKey = today.startOf("minute").toISOString();

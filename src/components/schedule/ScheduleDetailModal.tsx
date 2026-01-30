@@ -41,8 +41,8 @@ export function ScheduleDetailModal({
 }: ScheduleDetailModalProps) {
   const { settings } = useSettings();
   const scheduleConfig = getScheduleConfig(scheduleType);
-  const hasTeams = scheduleConfig.showsTeamSelection;
-  const teamCount = scheduleConfig.shiftConfig.teamCount || 1;
+  const teamCount = scheduleConfig.shiftConfig.teamCount;
+  const hasTeams = teamCount > 1;
   const isValidTeamNumber = hasTeams
     ? teamNumber >= 1 && teamNumber <= teamCount
     : teamNumber === 1;

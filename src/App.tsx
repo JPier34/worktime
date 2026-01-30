@@ -110,7 +110,7 @@ function AppContent() {
       // Always reset team when changing schedules, regardless of team count
       // Teams in different schedules represent different rosters
       const scheduleChanged = schedule !== scheduleType;
-      const teamsDisabled = !(nextScheduleConfig.showsTeamSelection ?? true);
+      const teamsDisabled = nextScheduleConfig.shiftConfig.teamCount <= 1;
 
       if (scheduleChanged || teamsDisabled) {
         // Only show notification if user had a team selected
@@ -173,7 +173,7 @@ function AppContent() {
         );
         return;
       }
-      const requiresTeam = selectedScheduleConfig.showsTeamSelection;
+      const requiresTeam = selectedScheduleConfig.shiftConfig.teamCount > 1;
       const teamForCompletion = requiresTeam ? myTeam : null;
       completeOnboardingWithSchedule(scheduleType, teamForCompletion, vacationAllowance);
       if (teamForCompletion !== null) {

@@ -107,8 +107,8 @@ export function ScheduleView({
   }
 
   const scheduleConfig = getScheduleConfig(scheduleType);
-  const teamCount = scheduleConfig.shiftConfig.teamCount ?? 1;
-  const hasTeams = scheduleConfig.showsTeamSelection;
+  const teamCount = scheduleConfig.shiftConfig.teamCount;
+  const hasTeams = teamCount > 1;
   // Validate and sanitize myTeam prop
   let myTeam = inputMyTeam;
   if (typeof myTeam === "number" && (myTeam < 1 || myTeam > teamCount)) {

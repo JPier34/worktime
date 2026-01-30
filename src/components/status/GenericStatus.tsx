@@ -28,7 +28,7 @@ interface GenericStatusContentProps {
  */
 export function GenericStatusContent({ scheduleType }: GenericStatusContentProps) {
   const scheduleConfig = getScheduleConfig(scheduleType);
-  const hasTeams = scheduleConfig.showsTeamSelection;
+  const hasTeams = scheduleConfig.shiftConfig.teamCount > 1;
   const teamCount = scheduleConfig.shiftConfig.teamCount;
 
   const today = dayjs();
