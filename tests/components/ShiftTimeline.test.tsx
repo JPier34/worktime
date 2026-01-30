@@ -64,6 +64,18 @@ const createMockShiftResult = (
   },
 });
 
+// Mock getAllTeamsShifts for testing single-team scenarios
+vi.mock("../../src/utils/shiftCalculations", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/utils/shiftCalculations")>();
+  return {
+    ...actual,
+    getAllTeamsShifts: vi.fn((_shiftDay, _scheduleOption) => {
+      // Return a single team for testing
+      return [createMockShiftResult(1, "M", dayjs("2025-01-15"))];
+    }),
+  };
+});
+
 describe("ShiftTimeline", () => {
   const today = dayjs("2025-01-15"); // Wednesday
 
