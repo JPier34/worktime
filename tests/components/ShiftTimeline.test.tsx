@@ -6,6 +6,7 @@ import { ShiftTimeline } from "../../src/components/ShiftTimeline";
 import { SettingsProvider } from "../../src/contexts/SettingsContext";
 import { dayjs } from "../../src/utils/dateTimeUtils";
 import type { ShiftResult } from "../../src/utils/shiftCalculations";
+import * as shiftCalculations from "../../src/utils/shiftCalculations";
 
 // Mock useSettings to provide scheduleType
 vi.mock("../../src/contexts/SettingsContext", async (importOriginal) => {
@@ -123,13 +124,9 @@ describe("ShiftTimeline", () => {
 
   // Tests for single-team and parallel shift scenarios (#119)
   it("hides timeline for single-team schedules (teamCount === 1)", () => {
-    vi.doMock("../../src/utils/shiftCalculations", async (importOriginal) => {
-      const actual = await importOriginal<typeof import("../../src/utils/shiftCalculations")>();
-      return {
-        ...actual,
-        getAllTeamsShifts: vi.fn(() => [createMockShiftResult(1, "M", today)]),
-      };
-    });
+    const spy = vi.spyOn(shiftCalculations, "getAllTeamsShifts").mockReturnValue([
+      createMockShiftResult(1, "M", today),
+    ]);
 
     const currentWorkingTeam = createMockShiftResult(1, "M", today);
     const { container } = renderWithProviders(
@@ -138,7 +135,7 @@ describe("ShiftTimeline", () => {
     const timelineContainer = container.querySelector(".card-timeline");
     expect(timelineContainer).not.toBeInTheDocument();
 
-    vi.unmock("../../src/utils/shiftCalculations");
+    spy.mockRestore();
   });
 
   it("correctly detects parallel shifts using hasTeamsWithSameStartTime logic", () => {
