@@ -159,7 +159,8 @@ export function ShiftTimeline({ currentWorkingTeam, today }: ShiftTimelineProps)
   const { prevShift, nextShift } = computeShiftTimeline(today, currentWorkingTeam, scheduleType);
 
   // Scenario 2: Check for parallel shifts (teams with same start time)
-  const allTeamsToday = getAllTeamsShifts(today, scheduleType);
+  // Use shift day (currentWorkingTeam.date) instead of calendar day to correctly handle night shifts
+  const allTeamsToday = getAllTeamsShifts(currentWorkingTeam.date, scheduleType);
   const workingTeams = allTeamsToday.filter((team) => team.shift.isWorking);
   const hasParallelShifts = hasTeamsWithSameStartTime(workingTeams);
   return (

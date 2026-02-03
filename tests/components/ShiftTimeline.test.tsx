@@ -141,7 +141,8 @@ describe("ShiftTimeline", () => {
     });
 
     afterEach(() => {
-      vi.restoreAllMocks();
+      // Clear call history for spies (e.g., getAllTeamsShifts) while keeping mocks intact
+      vi.clearAllMocks();
     });
 
     it("hides timeline for single-team schedules based on roster config", () => {
