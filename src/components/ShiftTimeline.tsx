@@ -9,6 +9,7 @@ import { useFormattedShiftTime } from "../hooks/useFormattedShiftTime";
 import type { ShiftResult } from "../utils/shiftCalculations";
 import type { ScheduleOption } from "../data/rosters";
 import { getAllTeamsShifts } from "../utils/shiftCalculations";
+import { getTeamCountForOption } from "../utils/scheduleUtils";
 
 interface TimelineData {
   prevShift: ShiftResult | null;
@@ -112,15 +113,17 @@ function computeShiftTimeline(
 
 /**
  * Check if multiple teams have the same shift start time (parallel shifts)
- * @param teams Array of ShiftResult objects
+ * @param teams Array of ShiftResult objects (should be pre-filtered to working teams only)
  * @returns true if teams work simultaneously (same start time), false if sequential
  */
 function hasTeamsWithSameStartTime(teams: ShiftResult[]): boolean {
-  if (teams.length <= 1) return false;
-  
-  const startTimes = new Set(teams.map(t => t.shift.start!));
+  // Filter to only teams with valid start times (excludes "Off" shifts with null start)
+  const teamsWithStart = teams.filter((t) => t.shift.start !== null);
+  if (teamsWithStart.length <= 1) return false;
+
+  const startTimes = new Set(teamsWithStart.map((t) => t.shift.start));
   // If number of teams > number of unique start times, there are parallel shifts
-  return teams.length > startTimes.size;
+  return teamsWithStart.length > startTimes.size;
 }
 
 interface ShiftTimelineProps {
@@ -147,19 +150,17 @@ export function ShiftTimeline({ currentWorkingTeam, today }: ShiftTimelineProps)
     throw new Error("ShiftTimeline requires a schedule to be selected");
   }
 
-  const { prevShift, nextShift } = computeShiftTimeline(today, currentWorkingTeam, scheduleType);
-
-  // Detect single-team schedules and return null (no timeline needed)
-  const allTeamsToday = getAllTeamsShifts(today, scheduleType);
-  const workingTeams = allTeamsToday.filter(team => team.shift.isWorking);
-  const teamCount = workingTeams.length;
-
-  // Scenario 1: Single-team schedule - hide timeline
-  if (teamCount === 1) {
+  // Scenario 1: Single-team schedule - hide timeline (use roster config, not working teams count)
+  const rosterTeamCount = getTeamCountForOption(scheduleType);
+  if (rosterTeamCount === 1) {
     return null;
   }
 
+  const { prevShift, nextShift } = computeShiftTimeline(today, currentWorkingTeam, scheduleType);
+
   // Scenario 2: Check for parallel shifts (teams with same start time)
+  const allTeamsToday = getAllTeamsShifts(today, scheduleType);
+  const workingTeams = allTeamsToday.filter((team) => team.shift.isWorking);
   const hasParallelShifts = hasTeamsWithSameStartTime(workingTeams);
   return (
     <div className="card-timeline timeline-container">

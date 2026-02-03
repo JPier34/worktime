@@ -2,9 +2,9 @@ import "@testing-library/jest-dom";
 import { render, screen } from "@testing-library/react";
 import type { Dayjs } from "dayjs";
 import type React from "react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ShiftTimeline } from "../../src/components/ShiftTimeline";
-import { SettingsProvider } from "../../src/contexts/SettingsContext";
+import { SettingsProvider, useSettings } from "../../src/contexts/SettingsContext";
 import { dayjs } from "../../src/utils/dateTimeUtils";
 import type { ShiftResult } from "../../src/utils/shiftCalculations";
 import * as shiftCalculations from "../../src/utils/shiftCalculations";
@@ -124,42 +124,93 @@ describe("ShiftTimeline", () => {
   });
 
   // Tests for single-team and parallel shift scenarios (#119)
-  it("hides timeline for single-team schedules (teamCount === 1)", () => {
-    const spy = vi.spyOn(shiftCalculations, "getAllTeamsShifts").mockReturnValue([
-      createMockShiftResult(1, "M", today),
-    ]);
+  describe("single-team and parallel shift scenarios", () => {
+    const defaultSettings = {
+      settings: {
+        timeFormat: "24h" as const,
+        theme: "auto" as const,
+        notifications: "off" as const,
+        vacationAllowance: { amount: 0, unit: "days" as const, hoursPerDay: 8 },
+      },
+      scheduleType: "5-shift" as const,
+    };
 
-    const currentWorkingTeam = createMockShiftResult(1, "M", today);
-    const { container } = renderWithProviders(
-      <ShiftTimeline currentWorkingTeam={currentWorkingTeam} today={today} />,
-    );
-    const timelineContainer = container.querySelector(".card-timeline");
-    expect(timelineContainer).not.toBeInTheDocument();
+    beforeEach(() => {
+      // Reset to default 5-shift before each test
+      vi.mocked(useSettings).mockReturnValue(defaultSettings as ReturnType<typeof useSettings>);
+    });
 
-    spy.mockRestore();
-  });
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
 
-  it("correctly detects parallel shifts using hasTeamsWithSameStartTime logic", () => {
-    const teamsWithSameStart = [
-      createMockShiftResult(1, "M", today), // start: 7
-      createMockShiftResult(2, "M", today), // start: 7
-      createMockShiftResult(3, "L", today), // start: 15
-    ];
-    const startTimes = new Set(teamsWithSameStart.map((t) => t.shift.start));
-    const hasParallelShifts = teamsWithSameStart.length > startTimes.size;
-    expect(hasParallelShifts).toBe(true);
-    expect(startTimes.size).toBe(2);
-  });
+    it("hides timeline for single-team schedules based on roster config", () => {
+      // Mock useSettings to return a single-team schedule (9-5)
+      vi.mocked(useSettings).mockReturnValue({
+        ...defaultSettings,
+        scheduleType: "9-5", // Single-team schedule
+      } as ReturnType<typeof useSettings>);
 
-  it("correctly identifies sequential shifts (no parallel shifts)", () => {
-    const teamsWithDifferentStart = [
-      createMockShiftResult(1, "M", today), // start: 7
-      createMockShiftResult(2, "L", today), // start: 15
-      createMockShiftResult(3, "N", today), // start: 23
-    ];
-    const startTimes = new Set(teamsWithDifferentStart.map((t) => t.shift.start));
-    const hasParallelShifts = teamsWithDifferentStart.length > startTimes.size;
-    expect(hasParallelShifts).toBe(false);
-    expect(startTimes.size).toBe(3);
+      const currentWorkingTeam = createMockShiftResult(1, "M", today);
+      const { container } = renderWithProviders(
+        <ShiftTimeline currentWorkingTeam={currentWorkingTeam} today={today} />,
+      );
+      const timelineContainer = container.querySelector(".card-timeline");
+      expect(timelineContainer).not.toBeInTheDocument();
+    });
+
+    it("shows arrows for sequential shifts (5-shift schedule)", () => {
+      // Mock getAllTeamsShifts to return sequential shifts (different start times)
+      vi.spyOn(shiftCalculations, "getAllTeamsShifts").mockReturnValue([
+        createMockShiftResult(1, "M", today), // start: 7
+        createMockShiftResult(2, "L", today), // start: 15
+        createMockShiftResult(3, "N", today), // start: 23
+        createMockShiftResult(4, "O", today), // Off
+        createMockShiftResult(5, "O", today), // Off
+      ]);
+
+      const currentWorkingTeam = createMockShiftResult(2, "L", today);
+      const { container } = renderWithProviders(
+        <ShiftTimeline currentWorkingTeam={currentWorkingTeam} today={today} />,
+      );
+
+      // 5-shift has sequential shifts (M -> L -> N), so arrows should be present
+      const arrows = container.querySelectorAll(".timeline-arrow");
+      expect(arrows.length).toBeGreaterThan(0);
+    });
+
+    it("hides arrows when teams have parallel shifts (same start time)", () => {
+      // Mock getAllTeamsShifts to return teams with same start time
+      vi.spyOn(shiftCalculations, "getAllTeamsShifts").mockReturnValue([
+        createMockShiftResult(1, "M", today), // start: 7
+        createMockShiftResult(2, "M", today), // start: 7 (parallel)
+      ]);
+
+      const currentWorkingTeam = createMockShiftResult(1, "M", today);
+      const { container } = renderWithProviders(
+        <ShiftTimeline currentWorkingTeam={currentWorkingTeam} today={today} />,
+      );
+
+      // With parallel shifts, arrows should not be rendered
+      const arrows = container.querySelectorAll(".timeline-arrow");
+      expect(arrows.length).toBe(0);
+    });
+
+    it("still shows timeline container for multi-team schedules with parallel shifts", () => {
+      // Mock getAllTeamsShifts to return teams with same start time
+      vi.spyOn(shiftCalculations, "getAllTeamsShifts").mockReturnValue([
+        createMockShiftResult(1, "M", today),
+        createMockShiftResult(2, "M", today),
+      ]);
+
+      const currentWorkingTeam = createMockShiftResult(1, "M", today);
+      const { container } = renderWithProviders(
+        <ShiftTimeline currentWorkingTeam={currentWorkingTeam} today={today} />,
+      );
+
+      // Timeline should still render (just without arrows)
+      const timelineContainer = container.querySelector(".card-timeline");
+      expect(timelineContainer).toBeInTheDocument();
+    });
   });
 });
