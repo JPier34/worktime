@@ -116,9 +116,7 @@ describe("ShiftTimeline", () => {
 
   it("handles different shift codes correctly", () => {
     const nightTeam = createMockShiftResult(5, "N", today);
-    const { container } = renderWithProviders(
-      <ShiftTimeline currentWorkingTeam={nightTeam} />,
-    );
+    const { container } = renderWithProviders(<ShiftTimeline currentWorkingTeam={nightTeam} />);
     expect(screen.getByText("T5")).toBeInTheDocument();
     const currentBadge = container.querySelector(".timeline-current-badge");
     expect(currentBadge).toBeInTheDocument();
