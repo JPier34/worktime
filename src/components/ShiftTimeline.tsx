@@ -1,4 +1,3 @@
-import type { Dayjs } from "dayjs";
 import { useId } from "react";
 import Badge from "react-bootstrap/Badge";
 import OverlayTrigger from "react-bootstrap/OverlayTrigger";
@@ -19,17 +18,15 @@ interface TimelineData {
 }
 
 /**
- * Build a timeline of working shifts for the given day and identify the previous and next shifts relative to the provided current working team.
+ * Build a timeline of working shifts and identify the previous and next shifts relative to the provided current working team.
  *
- * If the current team is the first working shift of the day, the previous shift (if any) is taken from the last working shift of the previous day. If the current team is the last working shift of the day, the next shift (if any) is taken from the first working shift of the following day.
+ * The shift day is derived from `currentWorkingTeam.date`. If the current team is the first working shift of the day, the previous shift (if any) is taken from the last working shift of the previous day. If the current team is the last working shift of the day, the next shift (if any) is taken from the first working shift of the following day.
  *
- * @param _today - The reference date (calendar day) - not used; shift day is derived from currentWorkingTeam.date
- * @param currentWorkingTeam - The team currently active within today's shifts
+ * @param currentWorkingTeam - The team currently active, from which the shift day is derived
  * @param scheduleOption - The schedule configuration to use
- * @returns An object with `prevShift`, `nextShift`, `currentShift`, and `workingTeams` for the shift day
+ * @returns An object with `prevShift`, `nextShift`, and `currentShift` for the shift day
  */
 function computeShiftTimeline(
-  _today: Dayjs,
   currentWorkingTeam: ShiftResult,
   scheduleOption?: ScheduleOption | null,
 ): TimelineData {
@@ -131,7 +128,6 @@ function hasTeamsWithSameStartTime(teams: ShiftResult[]): boolean {
 
 interface ShiftTimelineProps {
   currentWorkingTeam: ShiftResult;
-  today: Dayjs;
 }
 
 /**
@@ -140,10 +136,9 @@ interface ShiftTimelineProps {
  * Shows the previous and next working teams when available and a highlighted current team badge with tooltips for shift details and live updates.
  *
  * @param currentWorkingTeam - The ShiftResult representing the currently active team
- * @param today - The Dayjs date used to compute the timeline for the current day
  * @returns A React element that displays the shift timeline UI
  */
-export function ShiftTimeline({ currentWorkingTeam, today }: ShiftTimelineProps) {
+export function ShiftTimeline({ currentWorkingTeam }: ShiftTimelineProps) {
   // Generate unique ID for tooltip to avoid HTML ID conflicts
   const timelineTooltipId = useId();
   const { scheduleType } = useSettings();
@@ -160,7 +155,6 @@ export function ShiftTimeline({ currentWorkingTeam, today }: ShiftTimelineProps)
   }
 
   const { prevShift, nextShift, workingTeams } = computeShiftTimeline(
-    today,
     currentWorkingTeam,
     scheduleType,
   );

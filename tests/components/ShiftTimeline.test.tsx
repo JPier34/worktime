@@ -71,15 +71,17 @@ describe("ShiftTimeline", () => {
 
   it("renders timeline header", () => {
     const currentWorkingTeam = createMockShiftResult(1, "M", today);
-    renderWithProviders(<ShiftTimeline currentWorkingTeam={currentWorkingTeam} today={today} />);
+    const { container } = renderWithProviders(
+      <ShiftTimeline currentWorkingTeam={currentWorkingTeam} />,
+    );
     expect(screen.getByText("Today's Shift Timeline")).toBeInTheDocument();
-    expect(document.querySelector(".bi-clock")).toBeInTheDocument();
+    expect(container.querySelector(".bi-clock")).toBeInTheDocument();
   });
 
   it("displays current working team with active indicator", () => {
     const currentWorkingTeam = createMockShiftResult(3, "L", today);
     const { container } = renderWithProviders(
-      <ShiftTimeline currentWorkingTeam={currentWorkingTeam} today={today} />,
+      <ShiftTimeline currentWorkingTeam={currentWorkingTeam} />,
     );
     expect(screen.getByText("T3")).toBeInTheDocument();
     const currentBadge = container.querySelector(".timeline-current-badge");
@@ -89,7 +91,7 @@ describe("ShiftTimeline", () => {
 
   it("applies timeline-current-badge class to current team", () => {
     const currentWorkingTeam = createMockShiftResult(2, "N", today);
-    renderWithProviders(<ShiftTimeline currentWorkingTeam={currentWorkingTeam} today={today} />);
+    renderWithProviders(<ShiftTimeline currentWorkingTeam={currentWorkingTeam} />);
     const currentBadge = document.querySelector(".timeline-current-badge");
     expect(currentBadge).toBeInTheDocument();
     expect(currentBadge).toHaveTextContent("T2");
@@ -97,7 +99,7 @@ describe("ShiftTimeline", () => {
 
   it("applies correct shift styling classes", () => {
     const morningTeam = createMockShiftResult(1, "M", today);
-    renderWithProviders(<ShiftTimeline currentWorkingTeam={morningTeam} today={today} />);
+    renderWithProviders(<ShiftTimeline currentWorkingTeam={morningTeam} />);
     const badge = screen.getByText("T1");
     expect(badge).toHaveClass("timeline-current-badge");
     expect(badge).toHaveClass("timeline-badge");
@@ -106,7 +108,7 @@ describe("ShiftTimeline", () => {
   it("renders timeline flow structure", () => {
     const currentWorkingTeam = createMockShiftResult(1, "M", today);
     const { container } = renderWithProviders(
-      <ShiftTimeline currentWorkingTeam={currentWorkingTeam} today={today} />,
+      <ShiftTimeline currentWorkingTeam={currentWorkingTeam} />,
     );
     expect(container.querySelector(".timeline-flow")).toBeInTheDocument();
     expect(container.querySelector(".timeline-team")).toBeInTheDocument();
@@ -115,7 +117,7 @@ describe("ShiftTimeline", () => {
   it("handles different shift codes correctly", () => {
     const nightTeam = createMockShiftResult(5, "N", today);
     const { container } = renderWithProviders(
-      <ShiftTimeline currentWorkingTeam={nightTeam} today={today} />,
+      <ShiftTimeline currentWorkingTeam={nightTeam} />,
     );
     expect(screen.getByText("T5")).toBeInTheDocument();
     const currentBadge = container.querySelector(".timeline-current-badge");
@@ -153,7 +155,7 @@ describe("ShiftTimeline", () => {
 
       const currentWorkingTeam = createMockShiftResult(1, "M", today);
       const { container } = renderWithProviders(
-        <ShiftTimeline currentWorkingTeam={currentWorkingTeam} today={today} />,
+        <ShiftTimeline currentWorkingTeam={currentWorkingTeam} />,
       );
       expect(container.querySelector(".card-timeline")).not.toBeInTheDocument();
     });
@@ -167,7 +169,7 @@ describe("ShiftTimeline", () => {
 
       const currentWorkingTeam = createMockShiftResult(1, "M", today);
       const { container } = renderWithProviders(
-        <ShiftTimeline currentWorkingTeam={currentWorkingTeam} today={today} />,
+        <ShiftTimeline currentWorkingTeam={currentWorkingTeam} />,
       );
 
       expect(container.querySelectorAll(".timeline-arrow").length).toBeGreaterThan(0);
@@ -182,7 +184,7 @@ describe("ShiftTimeline", () => {
 
       const currentWorkingTeam = createMockShiftResult(1, "M", today);
       const { container } = renderWithProviders(
-        <ShiftTimeline currentWorkingTeam={currentWorkingTeam} today={today} />,
+        <ShiftTimeline currentWorkingTeam={currentWorkingTeam} />,
       );
 
       // Should render timeline but without arrows
