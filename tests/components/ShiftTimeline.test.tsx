@@ -141,8 +141,7 @@ describe("ShiftTimeline", () => {
     });
 
     afterEach(() => {
-      // Clear call history for spies (e.g., getAllTeamsShifts) while keeping mocks intact
-      vi.clearAllMocks();
+      vi.restoreAllMocks();
     });
 
     it("hides timeline for single-team schedules based on roster config", () => {
@@ -156,31 +155,25 @@ describe("ShiftTimeline", () => {
       const { container } = renderWithProviders(
         <ShiftTimeline currentWorkingTeam={currentWorkingTeam} today={today} />,
       );
-      const timelineContainer = container.querySelector(".card-timeline");
-      expect(timelineContainer).not.toBeInTheDocument();
+      expect(container.querySelector(".card-timeline")).not.toBeInTheDocument();
     });
 
-    it("shows arrows for sequential shifts (5-shift schedule)", () => {
+    it("shows arrows for sequential shifts", () => {
       // Mock getAllTeamsShifts to return sequential shifts (different start times)
       vi.spyOn(shiftCalculations, "getAllTeamsShifts").mockReturnValue([
         createMockShiftResult(1, "M", today), // start: 7
-        createMockShiftResult(2, "L", today), // start: 15
-        createMockShiftResult(3, "N", today), // start: 23
-        createMockShiftResult(4, "O", today), // Off
-        createMockShiftResult(5, "O", today), // Off
+        createMockShiftResult(2, "L", today), // start: 15 (sequential)
       ]);
 
-      const currentWorkingTeam = createMockShiftResult(2, "L", today);
+      const currentWorkingTeam = createMockShiftResult(1, "M", today);
       const { container } = renderWithProviders(
         <ShiftTimeline currentWorkingTeam={currentWorkingTeam} today={today} />,
       );
 
-      // 5-shift has sequential shifts (M -> L -> N), so arrows should be present
-      const arrows = container.querySelectorAll(".timeline-arrow");
-      expect(arrows.length).toBeGreaterThan(0);
+      expect(container.querySelectorAll(".timeline-arrow").length).toBeGreaterThan(0);
     });
 
-    it("hides arrows when teams have parallel shifts (same start time)", () => {
+    it("hides arrows when parallel shifts are detected", () => {
       // Mock getAllTeamsShifts to return teams with same start time
       vi.spyOn(shiftCalculations, "getAllTeamsShifts").mockReturnValue([
         createMockShiftResult(1, "M", today), // start: 7
@@ -192,26 +185,9 @@ describe("ShiftTimeline", () => {
         <ShiftTimeline currentWorkingTeam={currentWorkingTeam} today={today} />,
       );
 
-      // With parallel shifts, arrows should not be rendered
-      const arrows = container.querySelectorAll(".timeline-arrow");
-      expect(arrows.length).toBe(0);
-    });
-
-    it("still shows timeline container for multi-team schedules with parallel shifts", () => {
-      // Mock getAllTeamsShifts to return teams with same start time
-      vi.spyOn(shiftCalculations, "getAllTeamsShifts").mockReturnValue([
-        createMockShiftResult(1, "M", today),
-        createMockShiftResult(2, "M", today),
-      ]);
-
-      const currentWorkingTeam = createMockShiftResult(1, "M", today);
-      const { container } = renderWithProviders(
-        <ShiftTimeline currentWorkingTeam={currentWorkingTeam} today={today} />,
-      );
-
-      // Timeline should still render (just without arrows)
-      const timelineContainer = container.querySelector(".card-timeline");
-      expect(timelineContainer).toBeInTheDocument();
+      // Should render timeline but without arrows
+      expect(container.querySelector(".card-timeline")).toBeInTheDocument();
+      expect(container.querySelector(".timeline-arrow")).not.toBeInTheDocument();
     });
   });
 });

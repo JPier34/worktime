@@ -15,6 +15,7 @@ interface TimelineData {
   prevShift: ShiftResult | null;
   currentShift: ShiftResult;
   nextShift: ShiftResult | null;
+  workingTeams: ShiftResult[];
 }
 
 /**
@@ -25,7 +26,7 @@ interface TimelineData {
  * @param _today - The reference date (calendar day) - not used; shift day is derived from currentWorkingTeam.date
  * @param currentWorkingTeam - The team currently active within today's shifts
  * @param scheduleOption - The schedule configuration to use
- * @returns An object with `prevShift` set to the adjacent previous working shift or `null`, `currentShift` equal to `currentWorkingTeam`, and `nextShift` set to the adjacent next working shift or `null`
+ * @returns An object with `prevShift`, `nextShift`, `currentShift`, and `workingTeams` for the shift day
  */
 function computeShiftTimeline(
   _today: Dayjs,
@@ -57,6 +58,7 @@ function computeShiftTimeline(
       prevShift: null,
       currentShift: currentWorkingTeam,
       nextShift: null,
+      workingTeams,
     };
   }
 
@@ -108,6 +110,7 @@ function computeShiftTimeline(
     prevShift,
     currentShift: currentWorkingTeam,
     nextShift,
+    workingTeams,
   };
 }
 
@@ -156,12 +159,13 @@ export function ShiftTimeline({ currentWorkingTeam, today }: ShiftTimelineProps)
     return null;
   }
 
-  const { prevShift, nextShift } = computeShiftTimeline(today, currentWorkingTeam, scheduleType);
+  const { prevShift, nextShift, workingTeams } = computeShiftTimeline(
+    today,
+    currentWorkingTeam,
+    scheduleType,
+  );
 
   // Scenario 2: Check for parallel shifts (teams with same start time)
-  // Use shift day (currentWorkingTeam.date) instead of calendar day to correctly handle night shifts
-  const allTeamsToday = getAllTeamsShifts(currentWorkingTeam.date, scheduleType);
-  const workingTeams = allTeamsToday.filter((team) => team.shift.isWorking);
   const hasParallelShifts = hasTeamsWithSameStartTime(workingTeams);
   return (
     <div className="card-timeline timeline-container">
